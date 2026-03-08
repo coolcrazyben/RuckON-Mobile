@@ -1,0 +1,91 @@
+Build a React Native Expo mobile app called RuckON. This is a fitness/community app for ruckers (people who walk/hike with weighted packs). Do NOT implement authentication, login screens, or any backend/API calls. Use mock data and local state only. Focus entirely on clean, production-quality UI and smooth navigation.
+Design Language:
+Dark tactical aesthetic. Color palette: deep forest green (#1B2E1E), burnt orange (#C4622D), bone/off-white (#E8E0D0), dark charcoal (#0F1410), moss green (#3D5C3A). Typography: use @expo-google-fonts/oswald for headings and @expo-google-fonts/inter for body. The app should feel like a premium fitness tracker meets military utility — rugged but clean. No purple gradients, no generic SaaS look.
+Navigation Structure:
+Use expo-router with a bottom tab navigator. Five tabs:
+
+Feed (home icon)
+Explore (communities + search)
+Log Ruck (center button, prominent burnt orange FAB style)
+Leaderboard
+Profile
+
+
+SCREENS TO BUILD:
+1. Feed Screen
+
+Header: "RuckON" wordmark + notification bell icon
+Toggle between "Friends" and "Global" feed
+Ruck activity cards showing: user avatar, name, distance, duration, weight carried, pace, a photo (use placeholder), like count + comment count, like button, comment button
+Community announcement cards (distinct styling — forest green background)
+Pull to refresh (mock)
+
+2. Explore Screen
+
+Search bar at top (communities + users)
+"Trending Communities" horizontal scroll cards: community banner image (placeholder), name, member count, join button
+"Suggested Friends" horizontal scroll: avatar, name, mutual friends count, add button
+"Active Challenges" vertical list: challenge name, end date, participant count, join button
+
+3. Log Ruck Screen (Modal or full screen)
+
+Large prominent screen
+Fields: Distance (miles), Duration (hh:mm:ss), Weight Carried (lbs), Notes (text input), Add Photos button
+Toggle: Manual Entry vs GPS Tracking (GPS mode shows a mock map placeholder with Start/Stop button)
+Save Ruck button (burnt orange, full width)
+
+4. Leaderboard Screen
+
+Tab toggle: Global / Friends / Community
+Weekly and Monthly toggle
+Sub-tabs: Distance / Weight Moved
+Leaderboard list: rank number, avatar, name, stat value, highlight current user row
+Top 3 get special treatment (gold/silver/bronze styling)
+
+5. Profile Screen
+
+Cover banner area (placeholder gradient)
+Avatar, name, location, bio
+Stats row: Total Miles | Total Rucks | Weight Moved
+Achievements shelf: horizontal scroll of badge icons with labels (First Ruck, 100 Miles, Iron Rucker, etc.)
+Communities section: list of joined communities
+Ruck history list: recent rucks with date, distance, duration
+
+6. Community Detail Screen (navigated from Explore)
+
+Banner image (placeholder)
+Community name, member count, description
+Join/Leave button
+Tab bar inside: Feed | Members | Leaderboard | Challenges
+Each tab shows relevant mock content
+
+7. Ruck Detail Screen (navigated from feed card tap)
+
+Full ruck stats: distance, duration, pace, weight, elevation (mock)
+Map placeholder
+Notes
+Photos (placeholder grid)
+Like / comment section
+
+
+Mock Data:
+Create a mockData.js file with realistic mock arrays for: users (5-8), rucks (10+), communities (6+), challenges (4+), leaderboard entries, achievements. Use realistic rucking stats (3-8 mile distances, 40-60 lb packs, 15-20 min/mile pace).
+Packages to install:
+
+expo-router
+react-native-safe-area-context
+react-native-screens
+@expo/vector-icons (use Ionicons throughout)
+expo-image-picker (UI only, no actual upload)
+react-native-maps (mock/placeholder only)
+@expo-google-fonts/oswald
+@expo-google-fonts/inter
+
+Rules:
+
+No login screens, no auth flows, no API calls
+All data is local mock data
+Every screen must be fully built out — no placeholder "coming soon" screens
+Use StyleSheet.create for all styles, no inline style objects
+Smooth, intentional animations where appropriate (tab transitions, card press states)
+The app should feel shippable as a demo — not a skeleton
