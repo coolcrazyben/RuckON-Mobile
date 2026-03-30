@@ -11,9 +11,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, {
+import {
   useSharedValue,
-  useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
@@ -83,9 +82,6 @@ export default function LogRuckScreen() {
   const startTimeRef = useRef<number>(0);
 
   const gpsIndicatorScale = useSharedValue(1);
-  const gpsStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: gpsIndicatorScale.value }],
-  }));
 
   const baseUrl = (() => {
     try { return getApiUrl(); } catch { return null; }
@@ -124,30 +120,38 @@ export default function LogRuckScreen() {
       setGpsElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
 
-    const sub = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        distanceInterval: 5,
-        timeInterval: 3000,
-      },
-      (loc) => {
-        const newCoord: Coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setCurrentPos(newCoord);
-        setRouteCoords((prev) => {
-          const updated = [...prev, newCoord];
-          if (updated.length >= 2) {
-            let total = 0;
-            for (let i = 1; i < updated.length; i++) {
-              total += haversineDistance(updated[i - 1], updated[i]);
+    try {
+      const sub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          distanceInterval: 5,
+          timeInterval: 3000,
+        },
+        (loc) => {
+          const newCoord: Coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          setCurrentPos(newCoord);
+          setRouteCoords((prev) => {
+            const updated = [...prev, newCoord];
+            if (updated.length >= 2) {
+              let total = 0;
+              for (let i = 1; i < updated.length; i++) {
+                total += haversineDistance(updated[i - 1], updated[i]);
+              }
+              setGpsMiles(total);
             }
-            setGpsMiles(total);
-          }
-          return updated;
-        });
+            return updated;
+          });
+        }
+      );
+      watchRef.current = sub;
+      setGpsActive(true);
+    } catch {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
       }
-    );
-    watchRef.current = sub;
-    setGpsActive(true);
+      Alert.alert('GPS Error', 'Could not start location tracking. Please check your permissions.');
+    }
   }, [locationPermission, gpsIndicatorScale]);
 
   const stopTracking = useCallback(() => {
