@@ -10,6 +10,22 @@
 
 RuckON is a fitness/community mobile app for ruckers (people who walk/hike with weighted packs). Built with dark tactical aesthetic using deep forest greens, burnt orange accents, and bone/off-white typography.
 
+## Authentication
+
+- Email/password sign-up and sign-in
+- Google and Apple sign-in (OAuth buttons wired, ready for real OAuth credentials)
+- Session-based auth with Bearer tokens stored in AsyncStorage
+- Auth context in `lib/auth.tsx`, navigation guards in `app/_layout.tsx`
+- API endpoints: POST `/api/auth/register`, `/api/auth/login`, `/api/auth/google`, `/api/auth/apple`, GET `/api/auth/me`, POST `/api/auth/logout`
+
+## Onboarding Flow
+
+After registration, users complete a 2-step onboarding:
+1. Profile info: gender, weight, location (`app/onboarding.tsx`)
+2. Optional community joining with search (`app/join-communities.tsx`)
+
+API: PATCH `/api/user/onboarding`, GET `/api/communities`, POST `/api/communities/:id/join`
+
 ## Design System
 
 **Colors** (constants/colors.ts):
@@ -29,31 +45,45 @@ RuckON is a fitness/community mobile app for ruckers (people who walk/hike with 
 
 ```
 app/
-  _layout.tsx          # Root layout, loads fonts (Oswald + Inter), sets dark theme
+  _layout.tsx          # Root layout with AuthProvider, navigation guards
+  auth.tsx             # Sign in/sign up screen (email, Google, Apple)
+  onboarding.tsx       # Profile setup (gender, weight, location)
+  join-communities.tsx # Community joining screen (optional, searchable)
   (tabs)/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
     index.tsx          # Feed screen (friends/global toggle, ruck cards, announcements)
     explore.tsx        # Explore screen (search, communities, friends, challenges)
     log.tsx            # Log Ruck screen (manual entry + GPS mode)
     leaderboard.tsx    # Leaderboard (global/friends/community, weekly/monthly)
-    profile.tsx        # Profile screen (stats, achievements, communities, history)
+    profile.tsx        # Profile screen (stats, achievements, communities, history, logout)
   ruck/
     [id].tsx           # Ruck detail (stats grid, map, photos, comments)
   community/
     [id].tsx           # Community detail (feed/members/leaderboard/challenges tabs)
+lib/
+  auth.tsx             # AuthProvider context, useAuth hook, token management
+  query-client.ts      # TanStack Query client, API helpers
 data/
   mockData.ts          # All mock data (users, rucks, communities, challenges, leaderboard)
 constants/
   colors.ts            # App color palette
+server/
+  index.ts             # Express server, CORS, static files, landing page
+  routes.ts            # Auth endpoints, community endpoints, onboarding
+  storage.ts           # In-memory storage (users, sessions, communities)
+shared/
+  schema.ts            # Drizzle schema (users, communities, userCommunities) + Zod validators
 ```
 
 ## Features
 
+- **Auth:** Email/password + Google/Apple sign-in, session management
+- **Onboarding:** Gender, weight, location collection → optional community joining
 - **Feed:** Friends/Global toggle, ruck activity cards with stats, community announcements, like/comment actions, pull-to-refresh
 - **Explore:** Search bar, trending communities carousel, suggested friends carousel, active challenges list
 - **Log Ruck:** Manual entry (distance, duration, weight, notes, photos) + GPS tracking mode with live stats UI
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
-- **Profile:** Stats row, achievements shelf with locked states, communities list, ruck history
+- **Profile:** Stats row, achievements shelf with locked states, communities list, ruck history, logout
 - **Community Detail:** 4 inner tabs (Feed, Members, Leaderboard, Challenges)
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 
@@ -63,3 +93,5 @@ constants/
 - `react-native-maps@1.18.0` - Pinned version for Expo Go compatibility
 - `expo-linear-gradient` - Profile banner gradient
 - `react-native-reanimated` - Like button spring animations
+- `bcryptjs` - Password hashing
+- `@react-native-async-storage/async-storage` - Token persistence

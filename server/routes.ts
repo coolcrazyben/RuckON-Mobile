@@ -1,11 +1,252 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
+import bcrypt from "bcryptjs";
+import { registerSchema, loginSchema, onboardingSchema } from "@shared/schema";
+import { storage } from "./storage";
+
+function sanitizeUser(user: any) {
+  const { password, ...rest } = user;
+  return rest;
+}
+
+async function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  const token = authHeader.slice(7);
+  const user = await storage.getSessionUser(token);
+  if (!user) {
+    return res.status(401).json({ message: "Invalid session" });
+  }
+  (req as any).user = user;
+  (req as any).token = token;
+  next();
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    try {
+      const result = registerSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const { email, password, name } = result.data;
+
+      const existing = await storage.getUserByEmail(email);
+      if (existing) {
+        return res.status(409).json({ message: "An account with this email already exists" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const username = email.split("@")[0] + "_" + Math.random().toString(36).slice(2, 6);
+
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        name,
+        username,
+      });
+
+      const token = await storage.createSession(user.id);
+
+      return res.status(201).json({
+        user: sanitizeUser(user),
+        token,
+      });
+    } catch (error) {
+      console.error("Register error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const result = loginSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const { email, password } = result.data;
+
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      const token = await storage.createSession(user.id);
+
+      return res.json({
+        user: sanitizeUser(user),
+        token,
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/google", async (req: Request, res: Response) => {
+    try {
+      const { googleId, email, name, avatar } = req.body;
+      if (!googleId || !email) {
+        return res.status(400).json({ message: "Missing Google credentials" });
+      }
+
+      let user = await storage.getUserByGoogleId(googleId);
+      if (!user) {
+        user = await storage.getUserByEmail(email);
+        if (user) {
+          user = await storage.updateUser(user.id, { googleId });
+        } else {
+          const username = email.split("@")[0] + "_" + Math.random().toString(36).slice(2, 6);
+          user = await storage.createUser({
+            email,
+            name: name || email.split("@")[0],
+            username,
+            googleId,
+            avatar,
+          });
+        }
+      }
+
+      if (!user) {
+        return res.status(500).json({ message: "Failed to create user" });
+      }
+
+      const token = await storage.createSession(user.id);
+      return res.json({ user: sanitizeUser(user), token });
+    } catch (error) {
+      console.error("Google auth error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/apple", async (req: Request, res: Response) => {
+    try {
+      const { appleId, email, name } = req.body;
+      if (!appleId) {
+        return res.status(400).json({ message: "Missing Apple credentials" });
+      }
+
+      let user = await storage.getUserByAppleId(appleId);
+      if (!user) {
+        if (email) {
+          user = await storage.getUserByEmail(email);
+          if (user) {
+            user = await storage.updateUser(user.id, { appleId });
+          }
+        }
+        if (!user) {
+          const username = (email?.split("@")[0] || "user") + "_" + Math.random().toString(36).slice(2, 6);
+          user = await storage.createUser({
+            email: email || undefined,
+            name: name || "Apple User",
+            username,
+            appleId,
+          });
+        }
+      }
+
+      if (!user) {
+        return res.status(500).json({ message: "Failed to create user" });
+      }
+
+      const token = await storage.createSession(user.id);
+      return res.json({ user: sanitizeUser(user), token });
+    } catch (error) {
+      console.error("Apple auth error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/me", authMiddleware, async (req: Request, res: Response) => {
+    return res.json(sanitizeUser((req as any).user));
+  });
+
+  app.post("/api/auth/logout", authMiddleware, async (req: Request, res: Response) => {
+    await storage.deleteSession((req as any).token);
+    return res.json({ message: "Logged out" });
+  });
+
+  app.patch("/api/user/onboarding", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const result = onboardingSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const user = (req as any).user;
+      const updated = await storage.updateUser(user.id, {
+        gender: result.data.gender,
+        weight: result.data.weight,
+        location: result.data.location,
+        onboardingComplete: true,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.json(sanitizeUser(updated));
+    } catch (error) {
+      console.error("Onboarding error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities", async (req: Request, res: Response) => {
+    try {
+      const query = req.query.q as string;
+      const communities = query
+        ? await storage.searchCommunities(query)
+        : await storage.getCommunities();
+      return res.json(communities);
+    } catch (error) {
+      console.error("Communities error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/user/communities", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      const communities = await storage.getUserCommunities(user.id);
+      return res.json(communities);
+    } catch (error) {
+      console.error("User communities error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/communities/:id/join", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      await storage.joinCommunity(user.id, req.params.id);
+      return res.json({ message: "Joined community" });
+    } catch (error) {
+      console.error("Join community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/communities/:id/leave", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      await storage.leaveCommunity(user.id, req.params.id);
+      return res.json({ message: "Left community" });
+    } catch (error) {
+      console.error("Leave community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
 
   const httpServer = createServer(app);
-
   return httpServer;
 }

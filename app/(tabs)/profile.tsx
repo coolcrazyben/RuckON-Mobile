@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
+import { useAuth } from '@/lib/auth';
 import {
   MOCK_USERS,
   MOCK_RUCKS,
@@ -69,6 +70,7 @@ function RuckHistoryItem({ ruck }: { ruck: Ruck }) {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { logout, user } = useAuth();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   return (
@@ -87,6 +89,9 @@ export default function ProfileScreen() {
           </TouchableOpacity>
           <TouchableOpacity>
             <Ionicons name="share-outline" size={22} color={Colors.bone} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={logout}>
+            <Ionicons name="log-out-outline" size={22} color={Colors.bone} />
           </TouchableOpacity>
         </View>
         <View style={styles.profileHead}>
