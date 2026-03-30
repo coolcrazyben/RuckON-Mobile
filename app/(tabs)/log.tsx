@@ -283,6 +283,53 @@ export default function LogRuckScreen() {
 
   const gpsPace = formatPace(gpsMiles, gpsElapsed);
 
+  if (gpsActive && mode === 'gps') {
+    return (
+      <View style={styles.fullScreenContainer}>
+        <View style={StyleSheet.absoluteFill}>
+          {locationPermission ? (
+            <RuckMap ref={mapRef} currentPos={currentPos} routeCoords={routeCoords} />
+          ) : (
+            <View style={styles.mapFallback}>
+              <Ionicons name="map-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.mapFallbackText}>Location permission required</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={[styles.fsTopBar, { top: topPad + 8 }]}>
+          <View style={styles.fsLiveBadge}>
+            <View style={styles.gpsPulseDot} />
+            <Text style={styles.gpsLiveText}>TRACKING</Text>
+          </View>
+        </View>
+
+        <View style={[styles.fsBottomPanel, { paddingBottom: bottomPad + 90 }]}>
+          <View style={styles.fsStatsRow}>
+            <View style={styles.fsStatItem}>
+              <Text style={styles.fsStatValue}>{gpsMiles.toFixed(2)}</Text>
+              <Text style={styles.fsStatLabel}>miles</Text>
+            </View>
+            <View style={styles.fsStatDivider} />
+            <View style={styles.fsStatItem}>
+              <Text style={styles.fsStatValue}>{formatElapsed(gpsElapsed)}</Text>
+              <Text style={styles.fsStatLabel}>time</Text>
+            </View>
+            <View style={styles.fsStatDivider} />
+            <View style={styles.fsStatItem}>
+              <Text style={styles.fsStatValue}>{gpsPace}</Text>
+              <Text style={styles.fsStatLabel}>pace</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.fsStopBtn} onPress={stopTracking}>
+            <View style={styles.fsStopIcon} />
+            <Text style={styles.fsStopText}>STOP</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
@@ -305,7 +352,7 @@ export default function LogRuckScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeBtn, mode === 'gps' && styles.modeBtnActive]}
-          onPress={() => { if (!gpsActive) setMode('gps'); }}
+          onPress={() => setMode('gps')}
         >
           <Ionicons
             name="navigate-outline"
@@ -327,61 +374,44 @@ export default function LogRuckScreen() {
           <View style={styles.gpsSection}>
             <View style={styles.mapContainer}>
               {locationPermission ? (
-                <RuckMap
-                  ref={mapRef}
-                  currentPos={currentPos}
-                  routeCoords={routeCoords}
-                />
+                <RuckMap ref={mapRef} currentPos={currentPos} routeCoords={routeCoords} />
               ) : (
                 <View style={styles.mapFallback}>
                   <Ionicons name="map-outline" size={40} color={Colors.textMuted} />
                   <Text style={styles.mapFallbackText}>Location permission required</Text>
                 </View>
               )}
-              {gpsActive && (
-                <View style={styles.gpsLiveRow}>
-                  <View style={styles.gpsPulseDot} />
-                  <Text style={styles.gpsLiveText}>TRACKING ACTIVE</Text>
-                </View>
-              )}
-              {gpsFinished && !gpsActive && routeCoords.length > 0 && (
+              {gpsFinished && routeCoords.length > 0 && (
                 <View style={styles.gpsLiveRow}>
                   <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
                   <Text style={[styles.gpsLiveText, { color: Colors.success }]}>ROUTE CAPTURED</Text>
                 </View>
               )}
             </View>
-            <View style={styles.gpsStats}>
-              <View style={styles.gpsStatItem}>
-                <Text style={styles.gpsStatValue}>
-                  {gpsActive || gpsFinished ? gpsMiles.toFixed(2) : '--'}
-                </Text>
-                <Text style={styles.gpsStatLabel}>miles</Text>
+
+            {gpsFinished ? (
+              <View style={styles.gpsStats}>
+                <View style={styles.gpsStatItem}>
+                  <Text style={styles.gpsStatValue}>{gpsMiles.toFixed(2)}</Text>
+                  <Text style={styles.gpsStatLabel}>miles</Text>
+                </View>
+                <View style={styles.gpsStatItem}>
+                  <Text style={styles.gpsStatValue}>{formatElapsed(gpsElapsed)}</Text>
+                  <Text style={styles.gpsStatLabel}>time</Text>
+                </View>
+                <View style={styles.gpsStatItem}>
+                  <Text style={styles.gpsStatValue}>{gpsPace}</Text>
+                  <Text style={styles.gpsStatLabel}>pace</Text>
+                </View>
               </View>
-              <View style={styles.gpsStatItem}>
-                <Text style={styles.gpsStatValue}>
-                  {gpsActive || gpsFinished ? formatElapsed(gpsElapsed) : '--:--'}
-                </Text>
-                <Text style={styles.gpsStatLabel}>time</Text>
-              </View>
-              <View style={styles.gpsStatItem}>
-                <Text style={styles.gpsStatValue}>{gpsActive || gpsFinished ? gpsPace : '--:--'}</Text>
-                <Text style={styles.gpsStatLabel}>pace</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.gpsBtn, gpsActive && styles.gpsBtnStop]}
-              onPress={gpsActive ? stopTracking : startTracking}
-            >
-              <Ionicons
-                name={gpsActive ? 'stop' : 'play'}
-                size={20}
-                color={Colors.bone}
-              />
-              <Text style={styles.gpsBtnText}>
-                {gpsActive ? 'Stop Tracking' : 'Start Tracking'}
-              </Text>
-            </TouchableOpacity>
+            ) : null}
+
+            {!gpsFinished && (
+              <TouchableOpacity style={styles.gpsBtn} onPress={startTracking}>
+                <Ionicons name="play" size={20} color={Colors.bone} />
+                <Text style={styles.gpsBtnText}>Start Tracking</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>WEIGHT CARRIED (lbs)</Text>
@@ -738,5 +768,86 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.bone,
     letterSpacing: 2,
+  },
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: Colors.charcoal,
+  },
+  fsTopBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  fsLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15,20,16,0.85)',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+  },
+  fsBottomPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(15,20,16,0.92)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+  fsStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  fsStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  fsStatValue: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 36,
+    color: Colors.bone,
+  },
+  fsStatLabel: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  fsStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(232,224,208,0.15)',
+  },
+  fsStopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.danger,
+    borderRadius: 16,
+    paddingVertical: 18,
+  },
+  fsStopIcon: {
+    width: 16,
+    height: 16,
+    borderRadius: 3,
+    backgroundColor: Colors.bone,
+  },
+  fsStopText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 18,
+    color: Colors.bone,
+    letterSpacing: 3,
   },
 });

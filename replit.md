@@ -59,6 +59,7 @@ app/
   auth.tsx             # Sign in/sign up screen (email, Google, Apple)
   onboarding.tsx       # Profile setup (gender, weight, location)
   join-communities.tsx # Community joining screen (optional, searchable)
+  settings.tsx         # Settings screen (edit profile fields, logout)
   (tabs)/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
     index.tsx          # Feed screen (friends/global toggle, ruck cards, announcements)
@@ -95,11 +96,12 @@ shared/
 
 - **Auth:** Email/password + Google/Apple sign-in, session management
 - **Onboarding:** Gender, weight, location collection → optional community joining
-- **Feed:** Friends/Global toggle, ruck activity cards with stats, community announcements, like/comment actions, pull-to-refresh
-- **Explore:** Search bar, trending communities carousel, suggested friends carousel, active challenges list
-- **Log Ruck:** Manual entry (distance, duration, weight, notes) + GPS tracking with live map, orange route polyline, real-time distance/time/pace; rucks persist to database
+- **Feed:** Real ruck feed from API (`/api/rucks/feed`), pull-to-refresh, ruck cards with user avatar/name/stats
+- **Explore:** Search bar with debounced API search, real communities from `/api/communities`, join/leave with membership state from `/api/user/communities`
+- **Log Ruck:** Manual entry (distance, duration, weight, notes) + GPS tracking; full-screen map mode when tracking active with floating stats panel (distance/time/pace in large Oswald font) and red STOP button
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
-- **Profile:** Real user data from auth context, live ruck stats (totalMiles/totalRucks/weightMoved computed from DB), ruck history from API, blank avatar placeholder for new users
+- **Profile:** Real user data, live ruck stats, ruck history, real communities from API, profile picture upload via expo-image-picker (base64 data URI stored in DB), settings link, logout with confirmation dialog
+- **Settings:** Edit name, username (lowercase, unique), bio, location, weight via PATCH `/api/user/profile`; accessible from profile via settings icon
 - **Community Detail:** 4 inner tabs (Feed, Members, Leaderboard, Challenges)
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 
@@ -111,3 +113,4 @@ shared/
 - `react-native-reanimated` - Like button spring animations
 - `bcryptjs` - Password hashing
 - `@react-native-async-storage/async-storage` - Token persistence
+- `expo-image-picker` - Profile picture selection from photo library

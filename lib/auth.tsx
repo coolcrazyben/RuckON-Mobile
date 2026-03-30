@@ -24,6 +24,8 @@ interface AuthContextType {
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithApple: (identityToken: string, fullName?: string) => Promise<void>;
   completeOnboarding: (data: { gender: string; weight: number; location: string }) => Promise<void>;
+  updateProfile: (data: { name?: string; username?: string; bio?: string; location?: string; weight?: number; gender?: string }) => Promise<void>;
+  updateAvatar: (base64: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser) => void;
 }
@@ -157,6 +159,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(updatedUser);
   }
 
+  async function updateProfile(data: { name?: string; username?: string; bio?: string; location?: string; weight?: number; gender?: string }) {
+    if (!token) throw new Error('Not authenticated');
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/user/profile`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to update profile' }));
+      throw new Error(err.message);
+    }
+    const updatedUser = await res.json();
+    setUser(updatedUser);
+  }
+
+  async function updateAvatar(base64: string) {
+    if (!token) throw new Error('Not authenticated');
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/user/avatar`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ avatar: base64 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Failed to upload avatar' }));
+      throw new Error(err.message);
+    }
+    const updatedUser = await res.json();
+    setUser(updatedUser);
+  }
+
   async function logout() {
     try {
       if (token && baseUrl) {
@@ -183,6 +223,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         loginWithApple,
         completeOnboarding,
+        updateProfile,
+        updateAvatar,
         logout,
         setUser,
       }}

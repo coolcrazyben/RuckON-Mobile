@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, type User } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 
@@ -315,6 +315,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(userRucks);
     } catch (error) {
       console.error("Get rucks error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/user/profile", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const result = updateProfileSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const user = (req as AuthenticatedRequest).authUser;
+      const updateData: Record<string, unknown> = {};
+
+      if (result.data.username && result.data.username !== user.username) {
+        const existing = await storage.getUserByUsername(result.data.username);
+        if (existing && existing.id !== user.id) {
+          return res.status(409).json({ message: "Username already taken" });
+        }
+        updateData.username = result.data.username;
+      }
+      if (result.data.name !== undefined) updateData.name = result.data.name;
+      if (result.data.bio !== undefined) updateData.bio = result.data.bio;
+      if (result.data.location !== undefined) updateData.location = result.data.location;
+      if (result.data.weight !== undefined) updateData.weight = result.data.weight;
+      if (result.data.gender !== undefined) updateData.gender = result.data.gender;
+
+      const updated = await storage.updateUser(user.id, updateData);
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.json(sanitizeUser(updated));
+    } catch (error) {
+      console.error("Update profile error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/user/avatar", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const { avatar } = req.body;
+      if (!avatar || typeof avatar !== "string") {
+        return res.status(400).json({ message: "Avatar data required" });
+      }
+      const updated = await storage.updateUser(user.id, { avatar });
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      return res.json(sanitizeUser(updated));
+    } catch (error) {
+      console.error("Avatar upload error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/rucks/feed", async (req: Request, res: Response) => {
+    try {
+      const feedRucks = await storage.getRecentRucks(50);
+      return res.json(feedRucks);
+    } catch (error) {
+      console.error("Get rucks feed error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

@@ -93,6 +93,15 @@ export const onboardingSchema = z.object({
   location: z.string().min(1),
 });
 
+export const updateProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores").optional(),
+  bio: z.string().max(200).optional(),
+  location: z.string().optional(),
+  weight: z.number().positive().optional(),
+  gender: z.string().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;

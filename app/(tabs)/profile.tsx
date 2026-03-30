@@ -8,21 +8,17 @@ import {
   Image,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
-import {
-  MOCK_ACHIEVEMENTS,
-  MOCK_COMMUNITIES,
-  type Achievement,
-} from '@/data/mockData';
-
-const MY_COMMUNITIES = MOCK_COMMUNITIES.filter((c) => c.isJoined);
+import { MOCK_ACHIEVEMENTS, type Achievement } from '@/data/mockData';
 
 interface RuckData {
   id: string;
@@ -38,6 +34,13 @@ interface RuckStats {
   totalMiles: number;
   totalRucks: number;
   weightMoved: number;
+}
+
+interface CommunityData {
+  id: string;
+  name: string;
+  memberCount: number | null;
+  banner: string | null;
 }
 
 function formatDuration(seconds: number): string {
@@ -75,7 +78,7 @@ function AchievementBadge({ achievement }: { achievement: Achievement }) {
     <View style={[styles.badge, !achievement.earned && styles.badgeLocked]}>
       <View style={[styles.badgeIcon, !achievement.earned && styles.badgeIconLocked]}>
         <Ionicons
-          name={achievement.icon as any}
+          name={achievement.icon as keyof typeof Ionicons.glyphMap}
           size={22}
           color={achievement.earned ? Colors.burntOrange : Colors.textMuted}
         />
@@ -114,11 +117,12 @@ function RuckHistoryItem({ ruck }: { ruck: RuckData }) {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { logout, user, token } = useAuth();
+  const { logout, user, token, updateAvatar } = useAuth();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const [rucks, setRucks] = useState<RuckData[]>([]);
   const [stats, setStats] = useState<RuckStats>({ totalMiles: 0, totalRucks: 0, weightMoved: 0 });
+  const [communities, setCommunities] = useState<CommunityData[]>([]);
   const [loading, setLoading] = useState(true);
 
   const baseUrl = (() => {
@@ -127,18 +131,61 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!token || !baseUrl) return;
+      if (!token || !baseUrl) {
+        setLoading(false);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
 
       Promise.all([
         fetch(`${baseUrl}api/rucks`, { headers }).then(r => r.ok ? r.json() : []),
         fetch(`${baseUrl}api/rucks/stats`, { headers }).then(r => r.ok ? r.json() : { totalMiles: 0, totalRucks: 0, weightMoved: 0 }),
-      ]).then(([rucksData, statsData]) => {
+        fetch(`${baseUrl}api/user/communities`, { headers }).then(r => r.ok ? r.json() : []),
+      ]).then(([rucksData, statsData, commData]) => {
         setRucks(rucksData);
         setStats(statsData);
+        setCommunities(commData);
       }).catch(() => {}).finally(() => setLoading(false));
     }, [token, baseUrl])
   );
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log Out', style: 'destructive', onPress: () => logout() },
+      ]
+    );
+  };
+
+  const handlePickAvatar = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0].base64) {
+        const mimeType = result.assets[0].mimeType || 'image/jpeg';
+        const base64Uri = `data:${mimeType};base64,${result.assets[0].base64}`;
+        await updateAvatar(base64Uri);
+      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to update photo';
+      Alert.alert('Error', message);
+    }
+  };
 
   const displayName = user?.name || 'Rucker';
   const displayUsername = user?.username || '';
@@ -156,17 +203,14 @@ export default function ProfileScreen() {
         style={[styles.banner, { paddingTop: topPad + 12 }]}
       >
         <View style={styles.bannerActions}>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/settings')}>
             <Ionicons name="settings-outline" size={22} color={Colors.bone} />
           </TouchableOpacity>
-          <TouchableOpacity>
-            <Ionicons name="share-outline" size={22} color={Colors.bone} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={logout}>
+          <TouchableOpacity onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={22} color={Colors.bone} />
           </TouchableOpacity>
         </View>
-        <View style={styles.profileHead}>
+        <TouchableOpacity style={styles.profileHead} onPress={handlePickAvatar} activeOpacity={0.8}>
           {user?.avatar ? (
             <Image source={{ uri: user.avatar }} style={styles.profileAvatar} />
           ) : (
@@ -175,9 +219,9 @@ export default function ProfileScreen() {
             </View>
           )}
           <View style={styles.profileEdit}>
-            <Ionicons name="pencil" size={14} color={Colors.bone} />
+            <Ionicons name="camera" size={14} color={Colors.bone} />
           </View>
-        </View>
+        </TouchableOpacity>
         <Text style={styles.profileName}>{displayName}</Text>
         {displayUsername ? <Text style={styles.profileHandle}>@{displayUsername}</Text> : null}
         {displayLocation ? (
@@ -218,20 +262,34 @@ export default function ProfileScreen() {
       <View style={[styles.section, { marginTop: 24 }]}>
         <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>COMMUNITIES</Text>
         <View style={styles.communitiesList}>
-          {MY_COMMUNITIES.map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={styles.communityRow}
-              onPress={() => router.push({ pathname: '/community/[id]', params: { id: c.id } })}
-            >
-              <Image source={{ uri: c.banner }} style={styles.communityThumb} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.communityName}>{c.name}</Text>
-                <Text style={styles.communityMeta}>{c.memberCount.toLocaleString()} members</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ))}
+          {communities.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={32} color={Colors.textMuted} />
+              <Text style={styles.emptyStateTitle}>No communities yet</Text>
+              <Text style={styles.emptyStateText}>Explore and join communities</Text>
+            </View>
+          ) : (
+            communities.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={styles.communityRow}
+                onPress={() => router.push({ pathname: '/community/[id]', params: { id: c.id } })}
+              >
+                {c.banner ? (
+                  <Image source={{ uri: c.banner }} style={styles.communityThumb} />
+                ) : (
+                  <View style={[styles.communityThumb, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="people" size={18} color={Colors.bone} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.communityName}>{c.name}</Text>
+                  <Text style={styles.communityMeta}>{(c.memberCount || 0).toLocaleString()} members</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </View>
 

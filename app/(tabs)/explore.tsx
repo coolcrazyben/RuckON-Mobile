@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,101 +9,164 @@ import {
   FlatList,
   Image,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Colors from '@/constants/colors';
-import {
-  MOCK_COMMUNITIES,
-  MOCK_USERS,
-  MOCK_CHALLENGES,
-  type Community,
-  type User,
-  type Challenge,
-} from '@/data/mockData';
+import { useAuth } from '@/lib/auth';
+import { getApiUrl } from '@/lib/query-client';
 
-function CommunityCard({ community }: { community: Community }) {
-  const [joined, setJoined] = useState(community.isJoined);
+interface CommunityData {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number | null;
+  banner: string | null;
+  category: string | null;
+  location: string | null;
+}
+
+function CommunityCard({
+  community,
+  token,
+  baseUrl,
+  isJoined,
+  onToggleJoin,
+}: {
+  community: CommunityData;
+  token: string | null;
+  baseUrl: string | null;
+  isJoined: boolean;
+  onToggleJoin: (id: string, join: boolean) => void;
+}) {
+  const [joining, setJoining] = useState(false);
+
+  const toggleJoin = async () => {
+    if (!token || !baseUrl || joining) return;
+    const endpoint = isJoined ? 'leave' : 'join';
+    setJoining(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${community.id}/${endpoint}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        onToggleJoin(community.id, !isJoined);
+      }
+    } catch {} finally {
+      setJoining(false);
+    }
+  };
+
   return (
     <TouchableOpacity
       style={styles.communityCard}
       onPress={() => router.push({ pathname: '/community/[id]', params: { id: community.id } })}
       activeOpacity={0.85}
     >
-      <Image source={{ uri: community.banner }} style={styles.communityBanner} />
+      {community.banner ? (
+        <Image source={{ uri: community.banner }} style={styles.communityBanner} />
+      ) : (
+        <View style={[styles.communityBanner, { backgroundColor: Colors.forestGreen }]} />
+      )}
       <View style={styles.communityOverlay} />
       <View style={styles.communityInfo}>
         <Text style={styles.communityName} numberOfLines={1}>{community.name}</Text>
-        <Text style={styles.communityMeta}>{community.memberCount.toLocaleString()} members</Text>
+        <Text style={styles.communityMeta}>{(community.memberCount || 0).toLocaleString()} members</Text>
         <TouchableOpacity
-          style={[styles.joinBtn, joined && styles.joinBtnJoined]}
-          onPress={(e) => { e.stopPropagation(); setJoined((p) => !p); }}
+          style={[styles.joinBtn, isJoined && styles.joinBtnJoined]}
+          onPress={toggleJoin}
+          disabled={joining}
         >
-          <Text style={[styles.joinBtnText, joined && styles.joinBtnTextJoined]}>
-            {joined ? 'Joined' : 'Join'}
-          </Text>
+          {joining ? (
+            <ActivityIndicator size="small" color={Colors.bone} />
+          ) : (
+            <Text style={[styles.joinBtnText, isJoined && styles.joinBtnTextJoined]}>
+              {isJoined ? 'Joined' : 'Join'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 }
 
-function FriendCard({ user }: { user: User }) {
-  const [following, setFollowing] = useState(user.isFollowing);
-  return (
-    <View style={styles.friendCard}>
-      <Image source={{ uri: user.avatar }} style={styles.friendAvatar} />
-      <Text style={styles.friendName} numberOfLines={1}>{user.name}</Text>
-      <Text style={styles.friendMutual} numberOfLines={1}>
-        {user.mutualFriends > 0 ? `${user.mutualFriends} mutual` : user.location}
-      </Text>
-      <TouchableOpacity
-        style={[styles.addBtn, following && styles.addBtnFollowing]}
-        onPress={() => setFollowing((p) => !p)}
-      >
-        <Text style={[styles.addBtnText, following && styles.addBtnTextFollowing]}>
-          {following ? 'Following' : 'Follow'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function ChallengeRow({ challenge }: { challenge: Challenge }) {
-  const [joined, setJoined] = useState(challenge.isJoined);
-  return (
-    <View style={styles.challengeRow}>
-      <View style={styles.challengeLeft}>
-        <View style={styles.challengeIconWrap}>
-          <Ionicons name="flash" size={18} color={Colors.burntOrange} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.challengeTitle}>{challenge.title}</Text>
-          <Text style={styles.challengeMeta}>
-            {challenge.goal} · ends {challenge.endDate}
-          </Text>
-          <Text style={styles.challengeParticipants}>
-            {challenge.participants.toLocaleString()} participants
-          </Text>
-        </View>
-      </View>
-      <TouchableOpacity
-        style={[styles.challengeJoinBtn, joined && styles.challengeJoinBtnJoined]}
-        onPress={() => setJoined((p) => !p)}
-      >
-        <Text style={[styles.challengeJoinText, joined && styles.challengeJoinTextJoined]}>
-          {joined ? 'Joined' : 'Join'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const [searchText, setSearchText] = useState('');
+  const [communities, setCommunities] = useState<CommunityData[]>([]);
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const fetchIdRef = useRef(0);
+
+  const baseUrl = (() => {
+    try { return getApiUrl(); } catch { return null; }
+  })();
+
+  const fetchCommunities = useCallback((query: string) => {
+    if (!baseUrl) {
+      setLoading(false);
+      return;
+    }
+    const id = ++fetchIdRef.current;
+    const url = query
+      ? `${baseUrl}api/communities?q=${encodeURIComponent(query)}`
+      : `${baseUrl}api/communities`;
+    fetch(url)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (fetchIdRef.current === id) {
+          setCommunities(data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (fetchIdRef.current === id) {
+          setLoading(false);
+        }
+      });
+  }, [baseUrl]);
+
+  const fetchJoinedCommunities = useCallback(() => {
+    if (!baseUrl || !token) return;
+    fetch(`${baseUrl}api/user/communities`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: CommunityData[]) => {
+        setJoinedIds(new Set(data.map(c => c.id)));
+      })
+      .catch(() => {});
+  }, [baseUrl, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchCommunities(searchText);
+      fetchJoinedCommunities();
+    }, [fetchCommunities, fetchJoinedCommunities, searchText])
+  );
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoading(true);
+      fetchCommunities(searchText);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchText, fetchCommunities]);
+
+  const handleToggleJoin = useCallback((id: string, joined: boolean) => {
+    setJoinedIds(prev => {
+      const next = new Set(prev);
+      if (joined) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -115,7 +178,7 @@ export default function ExploreScreen() {
         <Ionicons name="search" size={18} color={Colors.textMuted} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search communities, people..."
+          placeholder="Search communities..."
           placeholderTextColor={Colors.textMuted}
           value={searchText}
           onChangeText={setSearchText}
@@ -132,42 +195,42 @@ export default function ExploreScreen() {
         contentContainerStyle={styles.scroll}
       >
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>TRENDING COMMUNITIES</Text>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>See all</Text>
-          </TouchableOpacity>
+          <Text style={styles.sectionTitle}>
+            {searchText ? 'SEARCH RESULTS' : 'COMMUNITIES'}
+          </Text>
         </View>
-        <FlatList
-          data={MOCK_COMMUNITIES}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-          renderItem={({ item }) => <CommunityCard community={item} />}
-          scrollEnabled={true}
-        />
 
-        <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-          <Text style={styles.sectionTitle}>SUGGESTED FRIENDS</Text>
-        </View>
-        <FlatList
-          data={MOCK_USERS.filter((u) => u.id !== 'me')}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-          renderItem={({ item }) => <FriendCard user={item} />}
-          scrollEnabled={true}
-        />
-
-        <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-          <Text style={styles.sectionTitle}>ACTIVE CHALLENGES</Text>
-        </View>
-        <View style={styles.challengesList}>
-          {MOCK_CHALLENGES.map((ch) => (
-            <ChallengeRow key={ch.id} challenge={ch} />
-          ))}
-        </View>
+        {loading ? (
+          <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 40 }} />
+        ) : communities.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={40} color={Colors.textMuted} />
+            <Text style={styles.emptyTitle}>
+              {searchText ? 'No communities found' : 'No communities yet'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {searchText ? 'Try a different search' : 'Communities will appear here'}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={communities}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+            renderItem={({ item }) => (
+              <CommunityCard
+                community={item}
+                token={token}
+                baseUrl={baseUrl}
+                isJoined={joinedIds.has(item.id)}
+                onToggleJoin={handleToggleJoin}
+              />
+            )}
+            scrollEnabled={true}
+          />
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -225,11 +288,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     letterSpacing: 1.5,
   },
-  seeAll: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: Colors.burntOrange,
-  },
   communityCard: {
     width: 160,
     height: 200,
@@ -283,117 +341,19 @@ const styles = StyleSheet.create({
   joinBtnTextJoined: {
     color: Colors.textMuted,
   },
-  friendCard: {
-    width: 110,
-    backgroundColor: Colors.darkCard,
-    borderRadius: 12,
-    padding: 12,
+  emptyState: {
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    paddingVertical: 60,
+    gap: 8,
   },
-  friendAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: Colors.mossGreen,
-  },
-  friendName: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: Colors.bone,
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  friendMutual: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 10,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  addBtn: {
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    backgroundColor: Colors.burntOrange,
-    borderRadius: 6,
-  },
-  addBtnFollowing: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: Colors.textMuted,
-  },
-  addBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
+  emptyTitle: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 18,
     color: Colors.bone,
   },
-  addBtnTextFollowing: {
-    color: Colors.textMuted,
-  },
-  challengesList: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  challengeRow: {
-    backgroundColor: Colors.darkCard,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-  },
-  challengeLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  challengeIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.forestGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  challengeTitle: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: Colors.bone,
-    marginBottom: 2,
-  },
-  challengeMeta: {
+  emptyText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginBottom: 2,
-  },
-  challengeParticipants: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: Colors.textMuted,
-  },
-  challengeJoinBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.burntOrange,
-    borderRadius: 8,
-  },
-  challengeJoinBtnJoined: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: Colors.textMuted,
-  },
-  challengeJoinText: {
-    fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
-    color: Colors.bone,
-  },
-  challengeJoinTextJoined: {
     color: Colors.textMuted,
   },
 });

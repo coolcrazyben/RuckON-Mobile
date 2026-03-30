@@ -25,6 +25,7 @@ export interface IStorage {
   createRuck(userId: string, data: { distance: number; durationSeconds?: number; weight?: number; notes?: string; routeCoordinates?: string; routeImageUrl?: string }): Promise<Ruck>;
   getUserRucks(userId: string): Promise<Ruck[]>;
   getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }>;
+  getRecentRucks(limit: number): Promise<Array<Ruck & { userName: string | null; userAvatar: string | null }>>;
 }
 
 const sessions = new Map<string, string>();
@@ -293,6 +294,28 @@ export class DatabaseStorage implements IStorage {
       totalRucks,
       weightMoved: Math.round(weightMoved),
     };
+  }
+
+  async getRecentRucks(limit: number): Promise<Array<Ruck & { userName: string | null; userAvatar: string | null }>> {
+    const results = await db
+      .select({
+        id: rucks.id,
+        userId: rucks.userId,
+        distance: rucks.distance,
+        durationSeconds: rucks.durationSeconds,
+        weight: rucks.weight,
+        notes: rucks.notes,
+        routeCoordinates: rucks.routeCoordinates,
+        routeImageUrl: rucks.routeImageUrl,
+        createdAt: rucks.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(rucks)
+      .leftJoin(users, eq(rucks.userId, users.id))
+      .orderBy(desc(rucks.createdAt))
+      .limit(limit);
+    return results;
   }
 }
 
