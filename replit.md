@@ -60,10 +60,11 @@ app/
   onboarding.tsx       # Profile setup (gender, weight, location)
   join-communities.tsx # Community joining screen (optional, searchable)
   settings.tsx         # Settings screen (edit profile fields, logout)
+  create-community.tsx # Community creation (name, description, category, location)
   (tabs)/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
-    index.tsx          # Feed screen (friends/global toggle, ruck cards, announcements)
-    explore.tsx        # Explore screen (search, communities, friends, challenges)
+    index.tsx          # Feed screen (real ruck data from API, pull-to-refresh)
+    explore.tsx        # Explore screen (search, category filters, nearby communities, create)
     log.tsx            # Log Ruck screen (manual entry + GPS tracking with live map)
     leaderboard.tsx    # Leaderboard (global/friends/community, weekly/monthly)
     profile.tsx        # Profile screen (real user data, live ruck stats/history, logout)
@@ -88,6 +89,7 @@ server/
   db.ts                # Drizzle/pg database connection
   oauth.ts             # Google/Apple token verification (tokeninfo API + JWKS signature check)
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
+  moderation.ts        # Content moderation (word-boundary profanity filter with leetspeak detection)
 shared/
   schema.ts            # Drizzle schema (users, communities, userCommunities, rucks) + Zod validators
 ```
@@ -97,7 +99,8 @@ shared/
 - **Auth:** Email/password + Google/Apple sign-in, session management
 - **Onboarding:** Gender, weight, location collection → optional community joining
 - **Feed:** Real ruck feed from API (`/api/rucks/feed`), pull-to-refresh, ruck cards with user avatar/name/stats
-- **Explore:** Search bar with debounced API search, real communities from `/api/communities`, join/leave with membership state from `/api/user/communities`
+- **Explore:** Search with debounce, category filters (General/Events/Local/Training/Military/Challenges/Gear/Social), nearby communities section ranked by user location, community creation with content moderation, join/leave with real membership state
+- **Community Creation:** POST `/api/communities` with auth + content moderation (word-boundary matching with leetspeak detection), Zod validation, atomic DB transaction for community + creator membership
 - **Log Ruck:** Manual entry (distance, duration, weight, notes) + GPS tracking; full-screen map mode when tracking active with floating stats panel (distance/time/pace in large Oswald font) and red STOP button
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
 - **Profile:** Real user data, live ruck stats, ruck history, real communities from API, profile picture upload via expo-image-picker (base64 data URI stored in DB), settings link, logout with confirmation dialog

@@ -32,6 +32,8 @@ export const communities = pgTable("communities", {
   banner: text("banner"),
   category: text("category"),
   location: text("location"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const userCommunities = pgTable("user_communities", {
@@ -100,6 +102,13 @@ export const updateProfileSchema = z.object({
   location: z.string().optional(),
   weight: z.number().positive().optional(),
   gender: z.string().optional(),
+});
+
+export const createCommunitySchema = z.object({
+  name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be under 50 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters").max(500, "Description must be under 500 characters"),
+  category: z.enum(["General", "Events", "Local", "Training", "Military", "Challenges", "Gear", "Social"]),
+  location: z.string().min(1, "Location is required").max(100),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

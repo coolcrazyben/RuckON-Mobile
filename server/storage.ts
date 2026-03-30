@@ -27,6 +27,8 @@ export interface IStorage {
   getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }>;
   getRecentRucks(limit: number): Promise<Array<Ruck & { userName: string | null; userAvatar: string | null }>>;
   getLeaderboard(period: 'weekly' | 'monthly', metric: 'distance' | 'weight'): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>>;
+  createCommunity(data: { name: string; description: string; category: string; location: string; createdBy: string }): Promise<Community>;
+  getCommunity(id: string): Promise<Community | undefined>;
 }
 
 const sessions = new Map<string, string>();
@@ -321,6 +323,29 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(rucks.createdAt))
       .limit(limit);
     return results;
+  }
+
+  async getCommunity(id: string): Promise<Community | undefined> {
+    const [community] = await db.select().from(communities).where(eq(communities.id, id));
+    return community;
+  }
+
+  async createCommunity(data: { name: string; description: string; category: string; location: string; createdBy: string }): Promise<Community> {
+    return await db.transaction(async (tx) => {
+      const [community] = await tx.insert(communities).values({
+        name: data.name,
+        description: data.description,
+        category: data.category,
+        location: data.location,
+        createdBy: data.createdBy,
+        memberCount: 1,
+      }).returning();
+      await tx.insert(userCommunities).values({
+        userId: data.createdBy,
+        communityId: community.id,
+      });
+      return community;
+    });
   }
 
   async getLeaderboard(period: 'weekly' | 'monthly', metric: 'distance' | 'weight'): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>> {

@@ -1,9 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, type User } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
+import { moderateText } from "./moderation";
 
 interface AuthenticatedRequest extends Request {
   authUser: User;
@@ -227,19 +228,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/communities", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const result = createCommunitySchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const nameCheck = moderateText(result.data.name);
+      if (!nameCheck.ok) {
+        return res.status(400).json({ message: nameCheck.message });
+      }
+      const descCheck = moderateText(result.data.description);
+      if (!descCheck.ok) {
+        return res.status(400).json({ message: descCheck.message });
+      }
+
+      const user = (req as AuthenticatedRequest).authUser;
+      const community = await storage.createCommunity({
+        name: result.data.name,
+        description: result.data.description,
+        category: result.data.category,
+        location: result.data.location,
+        createdBy: user.id,
+      });
+
+      return res.status(201).json(community);
+    } catch (error) {
+      console.error("Create community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.get("/api/communities", async (req: Request, res: Response) => {
     try {
       const query = req.query.q as string | undefined;
       const userLocation = req.query.location as string | undefined;
-      let communities;
+      const category = req.query.category as string | undefined;
+      let results;
       if (query) {
-        communities = await storage.searchCommunities(query);
+        results = await storage.searchCommunities(query);
       } else if (userLocation) {
-        communities = await storage.getCommunitiesByLocation(userLocation);
+        results = await storage.getCommunitiesByLocation(userLocation);
       } else {
-        communities = await storage.getCommunities();
+        results = await storage.getCommunities();
       }
-      return res.json(communities);
+      if (category) {
+        results = results.filter(c => c.category?.toLowerCase() === category.toLowerCase());
+      }
+      return res.json(results);
     } catch (error) {
       console.error("Communities error:", error);
       return res.status(500).json({ message: "Internal server error" });
