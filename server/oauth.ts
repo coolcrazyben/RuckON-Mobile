@@ -27,6 +27,14 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleTokenP
     throw new Error("Invalid Google token: missing email");
   }
 
+  const expectedClientId = process.env.GOOGLE_CLIENT_ID;
+  if (expectedClientId) {
+    const aud = typeof payload.aud === "string" ? payload.aud : "";
+    if (aud !== expectedClientId) {
+      throw new Error("Invalid Google token: audience mismatch");
+    }
+  }
+
   return {
     sub: payload.sub,
     email: payload.email,
@@ -95,6 +103,14 @@ export async function verifyAppleIdentityToken(identityToken: string): Promise<A
 
   if (payload.iss !== "https://appleid.apple.com") {
     throw new Error("Invalid Apple identity token: wrong issuer");
+  }
+
+  const expectedAud = process.env.APPLE_SERVICE_ID || process.env.APPLE_BUNDLE_ID;
+  if (expectedAud) {
+    const aud = typeof payload.aud === "string" ? payload.aud : "";
+    if (aud !== expectedAud) {
+      throw new Error("Invalid Apple identity token: audience mismatch");
+    }
   }
 
   const now = Math.floor(Date.now() / 1000);

@@ -37,13 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const baseUrl = (() => {
-    try {
-      return getApiUrl();
-    } catch {
-      return '';
-    }
-  })();
+  const baseUrl = getApiUrl();
 
   const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
     const headers: Record<string, string> = {
@@ -63,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function loadStoredSession() {
     try {
       const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (storedToken && baseUrl) {
+      if (storedToken) {
         const res = await fetch(`${baseUrl}api/auth/me`, {
           headers: { Authorization: `Bearer ${storedToken}` },
         });
@@ -130,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function completeOnboarding(data: { gender: string; weight: number; location: string }) {
-    if (!token || !baseUrl) throw new Error('Not authenticated');
+    if (!token) throw new Error('Not authenticated');
     const res = await fetch(`${baseUrl}api/user/onboarding`, {
       method: 'PATCH',
       headers: {

@@ -36,13 +36,7 @@ export default function JoinCommunitiesScreen() {
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  const baseUrl = (() => {
-    try {
-      return getApiUrl();
-    } catch {
-      return '';
-    }
-  })();
+  const baseUrl = getApiUrl();
 
   useEffect(() => {
     fetchCommunities();
