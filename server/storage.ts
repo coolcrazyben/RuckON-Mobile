@@ -1,7 +1,7 @@
-import type { User, InsertUser, Community, UserCommunity } from "@shared/schema";
-import { users, communities, userCommunities } from "@shared/schema";
+import type { User, InsertUser, Community, UserCommunity, Ruck } from "@shared/schema";
+import { users, communities, userCommunities, rucks } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, sql } from "drizzle-orm";
+import { eq, ilike, or, sql, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -22,6 +22,9 @@ export interface IStorage {
   joinCommunity(userId: string, communityId: string): Promise<void>;
   leaveCommunity(userId: string, communityId: string): Promise<void>;
   seedCommunities(): Promise<void>;
+  createRuck(userId: string, data: { distance: number; durationSeconds?: number; weight?: number; notes?: string; routeCoordinates?: string; routeImageUrl?: string }): Promise<Ruck>;
+  getUserRucks(userId: string): Promise<Ruck[]>;
+  getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }>;
 }
 
 const sessions = new Map<string, string>();
@@ -256,6 +259,40 @@ export class DatabaseStorage implements IStorage {
     ];
 
     await db.insert(communities).values(seedData);
+  }
+
+  async createRuck(userId: string, data: { distance: number; durationSeconds?: number; weight?: number; notes?: string; routeCoordinates?: string; routeImageUrl?: string }): Promise<Ruck> {
+    const [ruck] = await db.insert(rucks).values({
+      userId,
+      distance: Math.round(data.distance * 100),
+      durationSeconds: data.durationSeconds ?? null,
+      weight: data.weight ?? null,
+      notes: data.notes ?? null,
+      routeCoordinates: data.routeCoordinates ?? null,
+      routeImageUrl: data.routeImageUrl ?? null,
+    }).returning();
+    return ruck;
+  }
+
+  async getUserRucks(userId: string): Promise<Ruck[]> {
+    return db.select().from(rucks).where(eq(rucks.userId, userId)).orderBy(desc(rucks.createdAt));
+  }
+
+  async getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }> {
+    const userRucks = await this.getUserRucks(userId);
+    const totalRucks = userRucks.length;
+    let totalDistanceCents = 0;
+    let weightMoved = 0;
+    for (const r of userRucks) {
+      const dist = r.distance || 0;
+      totalDistanceCents += dist;
+      weightMoved += (dist / 100) * (r.weight || 0);
+    }
+    return {
+      totalMiles: totalDistanceCents / 100,
+      totalRucks,
+      weightMoved: Math.round(weightMoved),
+    };
   }
 }
 

@@ -43,6 +43,32 @@ export const userCommunities = pgTable("user_communities", {
   joinedAt: timestamp("joined_at").defaultNow(),
 });
 
+export const rucks = pgTable("rucks", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  distance: integer("distance"),
+  durationSeconds: integer("duration_seconds"),
+  weight: integer("weight"),
+  notes: text("notes"),
+  routeCoordinates: text("route_coordinates"),
+  routeImageUrl: text("route_image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertRuckSchema = z.object({
+  distance: z.number().positive(),
+  durationSeconds: z.number().int().nonnegative().optional(),
+  weight: z.number().int().nonnegative().optional(),
+  notes: z.string().optional(),
+  routeCoordinates: z.string().optional(),
+  routeImageUrl: z.string().optional(),
+});
+
+export type Ruck = typeof rucks.$inferSelect;
+export type InsertRuck = z.infer<typeof insertRuckSchema>;
+
 export const insertUserSchema = createInsertSchema(users).pick({
   email: true,
   username: true,

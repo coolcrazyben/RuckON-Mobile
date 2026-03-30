@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
+import { US_CITIES } from '@/data/usCities';
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
 
@@ -27,6 +29,18 @@ export default function OnboardingScreen() {
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const suggestions = useMemo(() => {
+    if (!location || location.length < 2) return [];
+    const q = location.toLowerCase();
+    return US_CITIES.filter((c) => c.toLowerCase().includes(q)).slice(0, 6);
+  }, [location]);
+
+  function selectCity(city: string) {
+    setLocation(city);
+    setShowSuggestions(false);
+  }
 
   async function handleContinue() {
     setError('');
@@ -136,16 +150,45 @@ export default function OnboardingScreen() {
           </View>
 
           <Text style={styles.label}>LOCATION</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="location-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Chicago, IL"
-              placeholderTextColor={Colors.textMuted}
-              value={location}
-              onChangeText={setLocation}
-              autoCapitalize="words"
-            />
+          <View style={{ zIndex: 10 }}>
+            <View style={styles.inputContainer}>
+              <Ionicons name="location-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Chicago, IL"
+                placeholderTextColor={Colors.textMuted}
+                value={location}
+                onChangeText={(text) => {
+                  setLocation(text);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                autoCapitalize="words"
+              />
+              {location.length > 0 && (
+                <TouchableOpacity onPress={() => { setLocation(''); setShowSuggestions(false); }}>
+                  <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {showSuggestions && suggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {suggestions.map((city, index) => (
+                  <TouchableOpacity
+                    key={city}
+                    style={[
+                      styles.suggestionItem,
+                      index < suggestions.length - 1 && styles.suggestionBorder,
+                    ]}
+                    onPress={() => selectCity(city)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="location" size={14} color={Colors.burntOrange} />
+                    <Text style={styles.suggestionText}>{city}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -298,6 +341,38 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
     color: Colors.textMuted,
+  },
+  suggestionsContainer: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.darkCard,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  suggestionBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.cardBorder,
+  },
+  suggestionText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.bone,
   },
   continueBtn: {
     flexDirection: 'row',

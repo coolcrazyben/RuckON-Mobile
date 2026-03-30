@@ -27,6 +27,15 @@ After registration, users complete a 2-step onboarding:
 
 API: PATCH `/api/user/onboarding`, GET `/api/communities`, GET `/api/communities/nearby` (auth, ranked by user location), POST `/api/communities/:id/join`
 
+## Ruck Logging
+
+- Rucks stored in PostgreSQL `rucks` table (distance stored as integer cents for precision, e.g. 5.2 miles = 520)
+- GPS tracking: expo-location watchPositionAsync with BestForNavigation accuracy, 5m distance interval
+- Route drawn as orange Polyline on react-native-maps MapView (native only, web shows coordinate fallback)
+- Platform split: `components/RuckMap.native.tsx` (native maps) / `components/RuckMap.tsx` (web fallback)
+- API endpoints: POST `/api/rucks` (create), GET `/api/rucks` (user's rucks), GET `/api/rucks/stats` (totalMiles, totalRucks, weightMoved)
+- Location autocomplete in onboarding uses curated US city list (`data/usCities.ts`)
+
 ## Design System
 
 **Colors** (constants/colors.ts):
@@ -54,9 +63,9 @@ app/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
     index.tsx          # Feed screen (friends/global toggle, ruck cards, announcements)
     explore.tsx        # Explore screen (search, communities, friends, challenges)
-    log.tsx            # Log Ruck screen (manual entry + GPS mode)
+    log.tsx            # Log Ruck screen (manual entry + GPS tracking with live map)
     leaderboard.tsx    # Leaderboard (global/friends/community, weekly/monthly)
-    profile.tsx        # Profile screen (stats, achievements, communities, history, logout)
+    profile.tsx        # Profile screen (real user data, live ruck stats/history, logout)
   ruck/
     [id].tsx           # Ruck detail (stats grid, map, photos, comments)
   community/
@@ -64,18 +73,22 @@ app/
 lib/
   auth.tsx             # AuthProvider context, useAuth hook, token management
   query-client.ts      # TanStack Query client, API helpers
+components/
+  RuckMap.tsx          # Map component (web fallback with coordinates display)
+  RuckMap.native.tsx   # Map component (react-native-maps with dark style, route polyline, marker)
 data/
-  mockData.ts          # All mock data (users, rucks, communities, challenges, leaderboard)
+  mockData.ts          # Mock data (users, rucks, communities, challenges, leaderboard)
+  usCities.ts          # US city list for location autocomplete
 constants/
   colors.ts            # App color palette
 server/
   index.ts             # Express server, CORS, static files, landing page
-  routes.ts            # Auth endpoints, community endpoints, onboarding
+  routes.ts            # Auth, community, ruck endpoints, onboarding
   db.ts                # Drizzle/pg database connection
   oauth.ts             # Google/Apple token verification (tokeninfo API + JWKS signature check)
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
 shared/
-  schema.ts            # Drizzle schema (users, communities, userCommunities) + Zod validators
+  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks) + Zod validators
 ```
 
 ## Features
@@ -84,9 +97,9 @@ shared/
 - **Onboarding:** Gender, weight, location collection → optional community joining
 - **Feed:** Friends/Global toggle, ruck activity cards with stats, community announcements, like/comment actions, pull-to-refresh
 - **Explore:** Search bar, trending communities carousel, suggested friends carousel, active challenges list
-- **Log Ruck:** Manual entry (distance, duration, weight, notes, photos) + GPS tracking mode with live stats UI
+- **Log Ruck:** Manual entry (distance, duration, weight, notes) + GPS tracking with live map, orange route polyline, real-time distance/time/pace; rucks persist to database
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
-- **Profile:** Stats row, achievements shelf with locked states, communities list, ruck history, logout
+- **Profile:** Real user data from auth context, live ruck stats (totalMiles/totalRucks/weightMoved computed from DB), ruck history from API, blank avatar placeholder for new users
 - **Community Detail:** 4 inner tabs (Feed, Members, Leaderboard, Challenges)
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 

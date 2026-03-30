@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,25 +7,68 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
+import { getApiUrl } from '@/lib/query-client';
 import {
-  MOCK_USERS,
-  MOCK_RUCKS,
   MOCK_ACHIEVEMENTS,
   MOCK_COMMUNITIES,
   type Achievement,
-  type Ruck,
 } from '@/data/mockData';
 
-const ME = MOCK_USERS.find((u) => u.id === 'me')!;
-const MY_RUCKS = MOCK_RUCKS.filter((r) => r.userId === 'me');
 const MY_COMMUNITIES = MOCK_COMMUNITIES.filter((c) => c.isJoined);
+
+interface RuckData {
+  id: string;
+  distance: number | null;
+  durationSeconds: number | null;
+  weight: number | null;
+  notes: string | null;
+  routeImageUrl: string | null;
+  createdAt: string | null;
+}
+
+interface RuckStats {
+  totalMiles: number;
+  totalRucks: number;
+  weightMoved: number;
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function formatPace(distanceCents: number, durationSeconds: number): string {
+  const miles = distanceCents / 100;
+  if (miles <= 0 || durationSeconds <= 0) return '--';
+  const paceMinutes = durationSeconds / 60 / miles;
+  const mins = Math.floor(paceMinutes);
+  const secs = Math.round((paceMinutes - mins) * 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  const diffWeeks = Math.floor(diffDays / 7);
+  return `${diffWeeks}w ago`;
+}
 
 function AchievementBadge({ achievement }: { achievement: Achievement }) {
   return (
@@ -44,34 +87,63 @@ function AchievementBadge({ achievement }: { achievement: Achievement }) {
   );
 }
 
-function RuckHistoryItem({ ruck }: { ruck: Ruck }) {
+function RuckHistoryItem({ ruck }: { ruck: RuckData }) {
+  const distMiles = (ruck.distance || 0) / 100;
+  const pace = ruck.durationSeconds ? formatPace(ruck.distance || 0, ruck.durationSeconds) : '--';
+  const duration = ruck.durationSeconds ? formatDuration(ruck.durationSeconds) : '--';
+  const dateLabel = ruck.createdAt ? timeAgo(ruck.createdAt) : '';
+
   return (
-    <TouchableOpacity
-      style={styles.historyItem}
-      onPress={() => router.push({ pathname: '/ruck/[id]', params: { id: ruck.id } })}
-      activeOpacity={0.8}
-    >
+    <View style={styles.historyItem}>
       <View style={styles.historyLeft}>
         <View style={styles.historyIconWrap}>
           <Ionicons name="walk" size={18} color={Colors.burntOrange} />
         </View>
         <View>
-          <Text style={styles.historyTitle}>{ruck.distance} mi · {ruck.weight} lbs</Text>
-          <Text style={styles.historyMeta}>{ruck.date} · {ruck.duration}</Text>
+          <Text style={styles.historyTitle}>{distMiles.toFixed(1)} mi · {ruck.weight || 0} lbs</Text>
+          <Text style={styles.historyMeta}>{dateLabel} · {duration}</Text>
         </View>
       </View>
       <View style={styles.historyRight}>
-        <Text style={styles.historyPace}>{ruck.pace}</Text>
+        <Text style={styles.historyPace}>{pace}</Text>
         <Text style={styles.historyPaceLabel}>min/mi</Text>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { logout, user } = useAuth();
+  const { logout, user, token } = useAuth();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+
+  const [rucks, setRucks] = useState<RuckData[]>([]);
+  const [stats, setStats] = useState<RuckStats>({ totalMiles: 0, totalRucks: 0, weightMoved: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const baseUrl = (() => {
+    try { return getApiUrl(); } catch { return null; }
+  })();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || !baseUrl) return;
+      const headers = { Authorization: `Bearer ${token}` };
+
+      Promise.all([
+        fetch(`${baseUrl}api/rucks`, { headers }).then(r => r.ok ? r.json() : []),
+        fetch(`${baseUrl}api/rucks/stats`, { headers }).then(r => r.ok ? r.json() : { totalMiles: 0, totalRucks: 0, weightMoved: 0 }),
+      ]).then(([rucksData, statsData]) => {
+        setRucks(rucksData);
+        setStats(statsData);
+      }).catch(() => {}).finally(() => setLoading(false));
+    }, [token, baseUrl])
+  );
+
+  const displayName = user?.name || 'Rucker';
+  const displayUsername = user?.username || '';
+  const displayLocation = user?.location || '';
+  const displayBio = user?.bio || '';
 
   return (
     <ScrollView
@@ -95,33 +167,41 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.profileHead}>
-          <Image source={{ uri: ME.avatar }} style={styles.profileAvatar} />
+          {user?.avatar ? (
+            <Image source={{ uri: user.avatar }} style={styles.profileAvatar} />
+          ) : (
+            <View style={[styles.profileAvatar, styles.profileAvatarPlaceholder]}>
+              <Ionicons name="person" size={36} color={Colors.textMuted} />
+            </View>
+          )}
           <View style={styles.profileEdit}>
             <Ionicons name="pencil" size={14} color={Colors.bone} />
           </View>
         </View>
-        <Text style={styles.profileName}>{ME.name}</Text>
-        <Text style={styles.profileHandle}>@{ME.username}</Text>
-        <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={13} color={Colors.textSecondary} />
-          <Text style={styles.locationText}>{ME.location}</Text>
-        </View>
-        <Text style={styles.bio}>{ME.bio}</Text>
+        <Text style={styles.profileName}>{displayName}</Text>
+        {displayUsername ? <Text style={styles.profileHandle}>@{displayUsername}</Text> : null}
+        {displayLocation ? (
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={13} color={Colors.textSecondary} />
+            <Text style={styles.locationText}>{displayLocation}</Text>
+          </View>
+        ) : null}
+        {displayBio ? <Text style={styles.bio}>{displayBio}</Text> : null}
       </LinearGradient>
 
       <View style={styles.statsCard}>
         <View style={styles.statBlock}>
-          <Text style={styles.statNum}>{ME.totalMiles.toLocaleString()}</Text>
+          <Text style={styles.statNum}>{stats.totalMiles < 1000 ? stats.totalMiles.toFixed(1) : (stats.totalMiles / 1000).toFixed(1) + 'k'}</Text>
           <Text style={styles.statBlockLabel}>Total Miles</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBlock}>
-          <Text style={styles.statNum}>{ME.totalRucks}</Text>
+          <Text style={styles.statNum}>{stats.totalRucks}</Text>
           <Text style={styles.statBlockLabel}>Total Rucks</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBlock}>
-          <Text style={styles.statNum}>{(ME.weightMoved / 1000).toFixed(0)}k</Text>
+          <Text style={styles.statNum}>{stats.weightMoved >= 1000 ? (stats.weightMoved / 1000).toFixed(0) + 'k' : stats.weightMoved}</Text>
           <Text style={styles.statBlockLabel}>lbs Moved</Text>
         </View>
       </View>
@@ -158,12 +238,21 @@ export default function ProfileScreen() {
       <View style={[styles.section, { marginTop: 24 }]}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>RUCK HISTORY</Text>
-          <Text style={styles.seeAll}>See all</Text>
         </View>
         <View style={styles.historyList}>
-          {MY_RUCKS.map((r) => (
-            <RuckHistoryItem key={r.id} ruck={r} />
-          ))}
+          {loading ? (
+            <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 20 }} />
+          ) : rucks.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="footsteps-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.emptyStateTitle}>No rucks yet</Text>
+              <Text style={styles.emptyStateText}>Log your first ruck to see it here</Text>
+            </View>
+          ) : (
+            rucks.map((r) => (
+              <RuckHistoryItem key={r.id} ruck={r} />
+            ))
+          )}
         </View>
       </View>
     </ScrollView>
@@ -196,6 +285,11 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     borderWidth: 3,
     borderColor: Colors.burntOrange,
+  },
+  profileAvatarPlaceholder: {
+    backgroundColor: Colors.darkCard,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileEdit: {
     position: 'absolute',
@@ -290,11 +384,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     letterSpacing: 1.5,
     marginBottom: 14,
-  },
-  seeAll: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: Colors.burntOrange,
   },
   badge: {
     alignItems: 'center',
@@ -406,6 +495,21 @@ const styles = StyleSheet.create({
   historyPaceLabel: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
+    color: Colors.textMuted,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 8,
+  },
+  emptyStateTitle: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 18,
+    color: Colors.bone,
+  },
+  emptyStateText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
     color: Colors.textMuted,
   },
 });

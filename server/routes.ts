@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema, type User } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 
@@ -289,6 +289,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ message: "Left community" });
     } catch (error) {
       console.error("Leave community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/rucks", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const result = insertRuckSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+      const user = (req as AuthenticatedRequest).authUser;
+      const ruck = await storage.createRuck(user.id, result.data);
+      return res.status(201).json(ruck);
+    } catch (error) {
+      console.error("Create ruck error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/rucks", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const userRucks = await storage.getUserRucks(user.id);
+      return res.json(userRucks);
+    } catch (error) {
+      console.error("Get rucks error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/rucks/stats", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const stats = await storage.getUserRuckStats(user.id);
+      return res.json(stats);
+    } catch (error) {
+      console.error("Get ruck stats error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
