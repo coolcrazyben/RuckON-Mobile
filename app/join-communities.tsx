@@ -36,7 +36,13 @@ export default function JoinCommunitiesScreen() {
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  const baseUrl = getApiUrl();
+  const baseUrl = (() => {
+    try {
+      return getApiUrl();
+    } catch {
+      return null;
+    }
+  })();
 
   useEffect(() => {
     fetchCommunities();
@@ -48,6 +54,10 @@ export default function JoinCommunitiesScreen() {
     try {
       setLoading(true);
       setError('');
+      if (!baseUrl) {
+        setError('Server connection not configured');
+        return;
+      }
       let url: string;
       if (query) {
         url = `${baseUrl}api/communities?q=${encodeURIComponent(query)}`;
@@ -85,7 +95,7 @@ export default function JoinCommunitiesScreen() {
   }
 
   async function toggleJoin(communityId: string) {
-    if (!token) return;
+    if (!token || !baseUrl) return;
     const isJoined = joinedIds.has(communityId);
     const endpoint = isJoined ? 'leave' : 'join';
 

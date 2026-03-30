@@ -37,7 +37,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const baseUrl = getApiUrl();
+  const baseUrl = (() => {
+    try {
+      return getApiUrl();
+    } catch {
+      return null;
+    }
+  })();
 
   const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
     const headers: Record<string, string> = {
@@ -57,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function loadStoredSession() {
     try {
       const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
-      if (storedToken) {
+      if (storedToken && baseUrl) {
         const res = await fetch(`${baseUrl}api/auth/me`, {
           headers: { Authorization: `Bearer ${storedToken}` },
         });
@@ -87,8 +93,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TOKEN_KEY, data.token);
   }
 
+  function requireBaseUrl(): string {
+    if (!baseUrl) throw new Error('Server connection not configured');
+    return baseUrl;
+  }
+
   async function login(email: string, password: string) {
-    const res = await fetch(`${baseUrl}api/auth/login`, {
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -97,7 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function register(email: string, password: string, name: string) {
-    const res = await fetch(`${baseUrl}api/auth/register`, {
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
@@ -106,7 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function loginWithGoogle(idToken: string) {
-    const res = await fetch(`${baseUrl}api/auth/google`, {
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken }),
@@ -115,7 +129,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function loginWithApple(identityToken: string, fullName?: string) {
-    const res = await fetch(`${baseUrl}api/auth/apple`, {
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/auth/apple`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identityToken, fullName }),
@@ -125,7 +140,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function completeOnboarding(data: { gender: string; weight: number; location: string }) {
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${baseUrl}api/user/onboarding`, {
+    const url = requireBaseUrl();
+    const res = await fetch(`${url}api/user/onboarding`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
