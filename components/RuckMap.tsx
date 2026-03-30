@@ -1,5 +1,5 @@
-import React, { forwardRef } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { forwardRef, useImperativeHandle } from 'react';
+import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
 
@@ -11,10 +11,20 @@ interface Coord {
 interface RuckMapProps {
   currentPos: Coord | null;
   routeCoords: Coord[];
-  style?: any;
+  style?: ViewStyle;
 }
 
-const RuckMap = forwardRef<any, RuckMapProps>(({ currentPos, routeCoords }, ref) => {
+export interface RuckMapHandle {
+  takeSnapshot: () => Promise<string | null>;
+}
+
+const RuckMap = forwardRef<RuckMapHandle, RuckMapProps>(({ currentPos, routeCoords }, ref) => {
+  useImperativeHandle(ref, () => ({
+    takeSnapshot: async (): Promise<string | null> => {
+      return null;
+    },
+  }));
+
   return (
     <View style={styles.webMap}>
       <View style={styles.webMapContent}>

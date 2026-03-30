@@ -1,6 +1,6 @@
-import React, { forwardRef } from 'react';
-import { View, StyleSheet } from 'react-native';
-import NativeMapView, { Polyline, Marker } from 'react-native-maps';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import { View, StyleSheet, ViewStyle } from 'react-native';
+import NativeMapView, { Polyline, Marker, SnapshotOptions } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
 
@@ -12,7 +12,11 @@ interface Coord {
 interface RuckMapProps {
   currentPos: Coord | null;
   routeCoords: Coord[];
-  style?: any;
+  style?: ViewStyle;
+}
+
+export interface RuckMapHandle {
+  takeSnapshot: () => Promise<string | null>;
 }
 
 const darkMapStyle = [
@@ -26,7 +30,28 @@ const darkMapStyle = [
   { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
 ];
 
-const RuckMap = forwardRef<any, RuckMapProps>(({ currentPos, routeCoords, style }, ref) => {
+const RuckMap = forwardRef<RuckMapHandle, RuckMapProps>(({ currentPos, routeCoords, style }, ref) => {
+  const nativeMapRef = useRef<NativeMapView>(null);
+
+  useImperativeHandle(ref, () => ({
+    takeSnapshot: async (): Promise<string | null> => {
+      if (!nativeMapRef.current) return null;
+      try {
+        const options: SnapshotOptions = {
+          width: 400,
+          height: 300,
+          format: 'jpg',
+          quality: 0.8,
+          result: 'base64',
+        };
+        const base64 = await nativeMapRef.current.takeSnapshot(options);
+        return `data:image/jpeg;base64,${base64}`;
+      } catch {
+        return null;
+      }
+    },
+  }));
+
   if (!currentPos) {
     return (
       <View style={styles.fallback}>
@@ -37,7 +62,7 @@ const RuckMap = forwardRef<any, RuckMapProps>(({ currentPos, routeCoords, style 
 
   return (
     <NativeMapView
-      ref={ref}
+      ref={nativeMapRef}
       style={[styles.map, style]}
       initialRegion={{
         ...currentPos,

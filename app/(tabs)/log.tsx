@@ -21,7 +21,7 @@ import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
 
 import * as Location from 'expo-location';
-import RuckMap from '@/components/RuckMap';
+import RuckMap, { type RuckMapHandle } from '@/components/RuckMap';
 
 interface Coord {
   latitude: number;
@@ -77,9 +77,9 @@ export default function LogRuckScreen() {
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [gpsFinished, setGpsFinished] = useState(false);
 
-  const watchRef = useRef<any>(null);
-  const timerRef = useRef<any>(null);
-  const mapRef = useRef<any>(null);
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mapRef = useRef<RuckMapHandle>(null);
   const startTimeRef = useRef<number>(0);
 
   const gpsIndicatorScale = useSharedValue(1);
@@ -93,10 +93,10 @@ export default function LogRuckScreen() {
 
   useEffect(() => {
     if (Location) {
-      Location.requestForegroundPermissionsAsync().then((result: any) => {
+      Location.requestForegroundPermissionsAsync().then((result) => {
         setLocationPermission(result.status === 'granted');
         if (result.status === 'granted') {
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).then((loc: any) => {
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).then((loc) => {
             setCurrentPos({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
           }).catch(() => {});
         }
@@ -130,7 +130,7 @@ export default function LogRuckScreen() {
         distanceInterval: 5,
         timeInterval: 3000,
       },
-      (loc: any) => {
+      (loc) => {
         const newCoord: Coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setCurrentPos(newCoord);
         setRouteCoords((prev) => {
@@ -179,6 +179,7 @@ export default function LogRuckScreen() {
     let ruckWeight: number | undefined;
     let ruckNotes: string | undefined;
     let ruckRouteCoordinates: string | undefined;
+    let ruckRouteImageUrl: string | undefined;
 
     if (mode === 'gps') {
       if (!gpsFinished) {
@@ -195,6 +196,12 @@ export default function LogRuckScreen() {
       ruckNotes = notes || undefined;
       if (routeCoords.length > 0) {
         ruckRouteCoordinates = JSON.stringify(routeCoords);
+      }
+      if (mapRef.current) {
+        const snapshot = await mapRef.current.takeSnapshot();
+        if (snapshot) {
+          ruckRouteImageUrl = snapshot;
+        }
       }
     } else {
       if (!distance) {
@@ -235,6 +242,7 @@ export default function LogRuckScreen() {
           weight: ruckWeight,
           notes: ruckNotes,
           routeCoordinates: ruckRouteCoordinates,
+          routeImageUrl: ruckRouteImageUrl,
         }),
       });
 
@@ -258,8 +266,9 @@ export default function LogRuckScreen() {
         setGpsMiles(0);
         setGpsElapsed(0);
       }, 1500);
-    } catch (e: any) {
-      Alert.alert('Save Failed', e.message || 'Could not save ruck.');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Could not save ruck.';
+      Alert.alert('Save Failed', message);
     } finally {
       setSaving(false);
     }
