@@ -21,8 +21,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
-  loginWithGoogle: (googleId: string, email: string, name: string, avatar?: string) => Promise<void>;
-  loginWithApple: (appleId: string, email?: string, name?: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithApple: (identityToken: string, fullName?: string) => Promise<void>;
   completeOnboarding: (data: { gender: string; weight: number; location: string }) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser) => void;
@@ -111,20 +111,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await handleAuthResponse(res);
   }
 
-  async function loginWithGoogle(googleId: string, email: string, name: string, avatar?: string) {
+  async function loginWithGoogle(idToken: string) {
     const res = await fetch(`${baseUrl}api/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ googleId, email, name, avatar }),
+      body: JSON.stringify({ idToken }),
     });
     await handleAuthResponse(res);
   }
 
-  async function loginWithApple(appleId: string, email?: string, name?: string) {
+  async function loginWithApple(identityToken: string, fullName?: string) {
     const res = await fetch(`${baseUrl}api/auth/apple`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appleId, email, name }),
+      body: JSON.stringify({ identityToken, fullName }),
     });
     await handleAuthResponse(res);
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as WebBrowser from 'expo-web-browser';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
@@ -27,6 +32,28 @@ export default function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [googleRequest, googleResponse, googlePromptAsync] = Google.useIdTokenAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      const { id_token } = googleResponse.params;
+      if (id_token) {
+        setLoading(true);
+        setError('');
+        loginWithGoogle(id_token)
+          .catch((e: unknown) => {
+            const message = e instanceof Error ? e.message : 'Google sign in failed';
+            setError(message);
+          })
+          .finally(() => setLoading(false));
+      }
+    } else if (googleResponse?.type === 'error') {
+      setError('Google sign in was cancelled or failed');
+    }
+  }, [googleResponse]);
 
   async function handleSubmit() {
     setError('');
@@ -59,27 +86,42 @@ export default function AuthScreen() {
   }
 
   async function handleGoogleSignIn() {
-    setError('');
-    setLoading(true);
-    try {
-      const mockGoogleId = 'google_' + Date.now();
-      const mockEmail = 'user@gmail.com';
-      await loginWithGoogle(mockGoogleId, mockEmail, 'Google User');
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Google sign in failed';
-      setError(message);
-    } finally {
-      setLoading(false);
+    if (!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID) {
+      setError('Google sign-in is not configured. Please set EXPO_PUBLIC_GOOGLE_CLIENT_ID.');
+      return;
     }
+    setError('');
+    googlePromptAsync();
   }
 
   async function handleAppleSignIn() {
+    if (Platform.OS !== 'ios') {
+      setError('Apple sign-in is only available on iOS devices');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      const mockAppleId = 'apple_' + Date.now();
-      await loginWithApple(mockAppleId, 'user@icloud.com', 'Apple User');
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        throw new Error('No identity token returned from Apple');
+      }
+
+      const fullName = credential.fullName
+        ? [credential.fullName.givenName, credential.fullName.familyName].filter(Boolean).join(' ')
+        : undefined;
+
+      await loginWithApple(credential.identityToken, fullName || undefined);
     } catch (e: unknown) {
+      if (e instanceof Error && 'code' in e && (e as { code: string }).code === 'ERR_REQUEST_CANCELED') {
+        return;
+      }
       const message = e instanceof Error ? e.message : 'Apple sign in failed';
       setError(message);
     } finally {

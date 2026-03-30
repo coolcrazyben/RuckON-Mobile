@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
 import { registerSchema, loginSchema, onboardingSchema, type User } from "@shared/schema";
 import { storage } from "./storage";
+import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 
 interface AuthenticatedRequest extends Request {
   authUser: User;
@@ -99,24 +100,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/google", async (req: Request, res: Response) => {
     try {
-      const { googleId, email, name, avatar } = req.body;
-      if (!googleId || !email) {
-        return res.status(400).json({ message: "Missing Google credentials" });
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ message: "Missing Google ID token" });
       }
 
+      const googlePayload = await verifyGoogleIdToken(idToken);
+      if (!googlePayload.email_verified) {
+        return res.status(400).json({ message: "Google email not verified" });
+      }
+
+      const googleId = googlePayload.sub;
       let user: User | undefined = await storage.getUserByGoogleId(googleId);
+
       if (!user) {
-        user = await storage.getUserByEmail(email);
+        user = await storage.getUserByEmail(googlePayload.email);
         if (user) {
+          if (user.googleId && user.googleId !== googleId) {
+            return res.status(409).json({ message: "Account already linked to a different Google account" });
+          }
           user = await storage.updateUser(user.id, { googleId });
         } else {
-          const username = email.split("@")[0] + "_" + Math.random().toString(36).slice(2, 6);
+          const username = googlePayload.email.split("@")[0] + "_" + Math.random().toString(36).slice(2, 6);
           user = await storage.createUser({
-            email,
-            name: name || email.split("@")[0],
+            email: googlePayload.email,
+            name: googlePayload.name || googlePayload.email.split("@")[0],
             username,
             googleId,
-            avatar,
+            avatar: googlePayload.picture,
           });
         }
       }
@@ -129,30 +140,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ user: sanitizeUser(user), token });
     } catch (error) {
       console.error("Google auth error:", error);
-      return res.status(500).json({ message: "Internal server error" });
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(401).json({ message });
     }
   });
 
   app.post("/api/auth/apple", async (req: Request, res: Response) => {
     try {
-      const { appleId, email, name } = req.body;
-      if (!appleId) {
-        return res.status(400).json({ message: "Missing Apple credentials" });
+      const { identityToken, fullName } = req.body;
+      if (!identityToken) {
+        return res.status(400).json({ message: "Missing Apple identity token" });
       }
 
+      const applePayload = await verifyAppleIdentityToken(identityToken);
+      const appleId = applePayload.sub;
+
       let user: User | undefined = await storage.getUserByAppleId(appleId);
+
       if (!user) {
-        if (email) {
-          user = await storage.getUserByEmail(email);
+        if (applePayload.email) {
+          user = await storage.getUserByEmail(applePayload.email);
           if (user) {
+            if (user.appleId && user.appleId !== appleId) {
+              return res.status(409).json({ message: "Account already linked to a different Apple account" });
+            }
             user = await storage.updateUser(user.id, { appleId });
           }
         }
         if (!user) {
-          const username = (email?.split("@")[0] || "user") + "_" + Math.random().toString(36).slice(2, 6);
+          const emailPrefix = applePayload.email?.split("@")[0] || "user";
+          const username = emailPrefix + "_" + Math.random().toString(36).slice(2, 6);
           user = await storage.createUser({
-            email: email || undefined,
-            name: name || "Apple User",
+            email: applePayload.email || undefined,
+            name: fullName || "Apple User",
             username,
             appleId,
           });
@@ -167,7 +187,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ user: sanitizeUser(user), token });
     } catch (error) {
       console.error("Apple auth error:", error);
-      return res.status(500).json({ message: "Internal server error" });
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(401).json({ message });
     }
   });
 

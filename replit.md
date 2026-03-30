@@ -13,7 +13,8 @@ RuckON is a fitness/community mobile app for ruckers (people who walk/hike with 
 ## Authentication
 
 - Email/password sign-up and sign-in
-- Google and Apple sign-in (OAuth buttons wired, ready for real OAuth credentials)
+- Google sign-in via expo-auth-session (ID token verified server-side via Google tokeninfo API)
+- Apple sign-in via expo-apple-authentication (identity token signature verified server-side against Apple's public keys)
 - Session-based auth with Bearer tokens stored in AsyncStorage (sessions kept in server memory; will reset on server restart)
 - Auth context in `lib/auth.tsx`, navigation guards in `app/_layout.tsx`
 - API endpoints: POST `/api/auth/register`, `/api/auth/login`, `/api/auth/google`, `/api/auth/apple`, GET `/api/auth/me`, POST `/api/auth/logout`
@@ -71,6 +72,7 @@ server/
   index.ts             # Express server, CORS, static files, landing page
   routes.ts            # Auth endpoints, community endpoints, onboarding
   db.ts                # Drizzle/pg database connection
+  oauth.ts             # Google/Apple token verification (tokeninfo API + JWKS signature check)
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
 shared/
   schema.ts            # Drizzle schema (users, communities, userCommunities) + Zod validators
