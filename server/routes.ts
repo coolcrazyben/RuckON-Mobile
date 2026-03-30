@@ -372,6 +372,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/leaderboard", async (req: Request, res: Response) => {
+    try {
+      const period = (req.query.period as string) === 'monthly' ? 'monthly' : 'weekly';
+      const metric = (req.query.metric as string) === 'weight' ? 'weight' : 'distance';
+      const entries = await storage.getLeaderboard(period, metric);
+      return res.json(entries);
+    } catch (error) {
+      console.error("Leaderboard error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.get("/api/rucks/feed", async (req: Request, res: Response) => {
     try {
       const feedRucks = await storage.getRecentRucks(50);

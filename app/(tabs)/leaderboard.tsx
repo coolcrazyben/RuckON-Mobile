@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,28 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import Colors from '@/constants/colors';
-import { MOCK_LEADERBOARD, type LeaderboardEntry } from '@/data/mockData';
+import { useAuth } from '@/lib/auth';
+import { getApiUrl } from '@/lib/query-client';
 
-type Scope = 'global' | 'friends' | 'community';
 type Period = 'weekly' | 'monthly';
 type Metric = 'distance' | 'weight';
+
+interface LeaderboardEntry {
+  userId: string;
+  name: string | null;
+  username: string;
+  avatar: string | null;
+  totalDistance: number;
+  totalWeight: number;
+  rank: number;
+  isCurrentUser: boolean;
+}
 
 function getRankColor(rank: number) {
   if (rank === 1) return Colors.gold;
@@ -34,45 +47,55 @@ function getRankIcon(rank: number): string {
 function TopThreeItem({ entry, metric }: { entry: LeaderboardEntry; metric: Metric }) {
   const rankColor = getRankColor(entry.rank);
   const isFirst = entry.rank === 1;
+  const distMiles = entry.totalDistance / 100;
   return (
     <View style={[styles.topItem, isFirst && styles.topItemFirst]}>
       <View style={[styles.rankBadge, { borderColor: rankColor }]}>
         <Ionicons name={getRankIcon(entry.rank) as any} size={14} color={rankColor} />
       </View>
-      <Image source={{ uri: entry.avatar }} style={[styles.topAvatar, { borderColor: rankColor }]} />
-      <Text style={styles.topName} numberOfLines={1}>{entry.name.split(' ')[0]}</Text>
+      {entry.avatar ? (
+        <Image source={{ uri: entry.avatar }} style={[styles.topAvatar, { borderColor: rankColor }]} />
+      ) : (
+        <View style={[styles.topAvatar, styles.avatarPlaceholder, { borderColor: rankColor }]}>
+          <Ionicons name="person" size={20} color={Colors.textMuted} />
+        </View>
+      )}
+      <Text style={styles.topName} numberOfLines={1}>
+        {entry.name ? entry.name.split(' ')[0] : entry.username}
+      </Text>
       <Text style={[styles.topStat, { color: rankColor }]}>
         {metric === 'distance'
-          ? `${entry.distance} mi`
-          : `${(entry.weightMoved / 1000).toFixed(1)}k lbs`}
+          ? `${distMiles.toFixed(1)} mi`
+          : `${entry.totalWeight >= 1000 ? (entry.totalWeight / 1000).toFixed(1) + 'k' : entry.totalWeight} lbs`}
       </Text>
     </View>
   );
 }
 
-function EntryRow({
-  entry,
-  metric,
-}: {
-  entry: LeaderboardEntry;
-  metric: Metric;
-}) {
+function EntryRow({ entry, metric }: { entry: LeaderboardEntry; metric: Metric }) {
   const rankColor = getRankColor(entry.rank);
+  const distMiles = entry.totalDistance / 100;
   return (
     <View style={[styles.entryRow, entry.isCurrentUser && styles.entryRowCurrent]}>
       <View style={styles.rankNumWrap}>
         <Text style={[styles.rankNum, { color: rankColor }]}>{entry.rank}</Text>
       </View>
-      <Image source={{ uri: entry.avatar }} style={styles.entryAvatar} />
+      {entry.avatar ? (
+        <Image source={{ uri: entry.avatar }} style={styles.entryAvatar} />
+      ) : (
+        <View style={[styles.entryAvatar, styles.avatarPlaceholder]}>
+          <Ionicons name="person" size={16} color={Colors.textMuted} />
+        </View>
+      )}
       <View style={styles.entryInfo}>
         <Text style={[styles.entryName, entry.isCurrentUser && styles.entryNameCurrent]}>
-          {entry.name} {entry.isCurrentUser ? '(you)' : ''}
+          {entry.name || entry.username} {entry.isCurrentUser ? '(you)' : ''}
         </Text>
       </View>
       <Text style={[styles.entryStat, entry.isCurrentUser && { color: Colors.burntOrange }]}>
         {metric === 'distance'
-          ? `${entry.distance} mi`
-          : `${(entry.weightMoved / 1000).toFixed(1)}k lbs`}
+          ? `${distMiles.toFixed(1)} mi`
+          : `${entry.totalWeight >= 1000 ? (entry.totalWeight / 1000).toFixed(1) + 'k' : entry.totalWeight} lbs`}
       </Text>
     </View>
   );
@@ -80,33 +103,47 @@ function EntryRow({
 
 export default function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
-  const [scope, setScope] = useState<Scope>('global');
+  const { user } = useAuth();
   const [period, setPeriod] = useState<Period>('weekly');
   const [metric, setMetric] = useState<Metric>('distance');
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  const topThree = MOCK_LEADERBOARD.slice(0, 3);
-  const rest = MOCK_LEADERBOARD.slice(3);
+  const baseUrl = (() => {
+    try { return getApiUrl(); } catch { return null; }
+  })();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!baseUrl) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      fetch(`${baseUrl}api/leaderboard?period=${period}&metric=${metric}`)
+        .then(r => r.ok ? r.json() : [])
+        .then((data: Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>) => {
+          const ranked = data.map((e, i) => ({
+            ...e,
+            rank: i + 1,
+            isCurrentUser: user?.id === e.userId,
+          }));
+          setEntries(ranked);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, [baseUrl, period, metric, user?.id])
+  );
+
+  const topThree = entries.slice(0, 3);
+  const rest = entries.slice(3);
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Text style={styles.title}>LEADERBOARD</Text>
-      </View>
-
-      <View style={styles.scopeRow}>
-        {(['global', 'friends', 'community'] as Scope[]).map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.scopeBtn, scope === s && styles.scopeBtnActive]}
-            onPress={() => setScope(s)}
-          >
-            <Text style={[styles.scopeText, scope === s && styles.scopeTextActive]}>
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
       </View>
 
       <View style={styles.controlsRow}>
@@ -149,29 +186,49 @@ export default function LeaderboardScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={rest}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={() => (
-          <View>
-            <View style={styles.podium}>
-              <TopThreeItem entry={topThree[1]} metric={metric} />
-              <TopThreeItem entry={topThree[0]} metric={metric} />
-              <TopThreeItem entry={topThree[2]} metric={metric} />
+      {loading ? (
+        <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 60 }} />
+      ) : entries.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="trophy-outline" size={48} color={Colors.textMuted} />
+          <Text style={styles.emptyTitle}>No activity yet</Text>
+          <Text style={styles.emptyText}>Log rucks to appear on the leaderboard</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={rest}
+          keyExtractor={(item) => item.userId}
+          ListHeaderComponent={() => (
+            <View>
+              {topThree.length >= 3 ? (
+                <View style={styles.podium}>
+                  <TopThreeItem entry={topThree[1]} metric={metric} />
+                  <TopThreeItem entry={topThree[0]} metric={metric} />
+                  <TopThreeItem entry={topThree[2]} metric={metric} />
+                </View>
+              ) : topThree.length > 0 ? (
+                <View style={styles.podium}>
+                  {topThree.map(e => (
+                    <TopThreeItem key={e.userId} entry={e} metric={metric} />
+                  ))}
+                </View>
+              ) : null}
+              {rest.length > 0 && (
+                <View style={styles.listHeader}>
+                  <Text style={styles.listHeaderText}>RANK</Text>
+                  <Text style={[styles.listHeaderText, { flex: 1, marginLeft: 52 }]}>RUCKER</Text>
+                  <Text style={styles.listHeaderText}>
+                    {metric === 'distance' ? 'MILES' : 'LBS MOVED'}
+                  </Text>
+                </View>
+              )}
             </View>
-            <View style={styles.listHeader}>
-              <Text style={styles.listHeaderText}>RANK</Text>
-              <Text style={[styles.listHeaderText, { flex: 1, marginLeft: 52 }]}>RUCKER</Text>
-              <Text style={styles.listHeaderText}>
-                {metric === 'distance' ? 'MILES' : 'LBS MOVED'}
-              </Text>
-            </View>
-          </View>
-        )}
-        renderItem={({ item }) => <EntryRow entry={item} metric={metric} />}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-      />
+          )}
+          renderItem={({ item }) => <EntryRow entry={item} metric={metric} />}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
@@ -190,33 +247,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: Colors.bone,
     letterSpacing: 3,
-  },
-  scopeRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    backgroundColor: Colors.darkCard,
-    borderRadius: 10,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-  },
-  scopeBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  scopeBtnActive: {
-    backgroundColor: Colors.forestGreen,
-  },
-  scopeText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: Colors.textMuted,
-  },
-  scopeTextActive: {
-    color: Colors.bone,
   },
   controlsRow: {
     flexDirection: 'row',
@@ -314,6 +344,11 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 2,
   },
+  avatarPlaceholder: {
+    backgroundColor: Colors.darkCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   topName: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
@@ -389,5 +424,22 @@ const styles = StyleSheet.create({
     fontFamily: 'Oswald_600SemiBold',
     fontSize: 16,
     color: Colors.bone,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 80,
+    gap: 10,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 22,
+    color: Colors.bone,
+  },
+  emptyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
 });

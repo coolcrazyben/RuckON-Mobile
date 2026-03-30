@@ -26,6 +26,7 @@ export interface IStorage {
   getUserRucks(userId: string): Promise<Ruck[]>;
   getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }>;
   getRecentRucks(limit: number): Promise<Array<Ruck & { userName: string | null; userAvatar: string | null }>>;
+  getLeaderboard(period: 'weekly' | 'monthly', metric: 'distance' | 'weight'): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>>;
 }
 
 const sessions = new Map<string, string>();
@@ -76,6 +77,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: string, data: Partial<User>): Promise<User | undefined> {
     const updateData: Record<string, unknown> = {};
+    if (data.username !== undefined) updateData.username = data.username;
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.weight !== undefined) updateData.weight = data.weight;
     if (data.location !== undefined) updateData.location = data.location;
@@ -86,6 +88,9 @@ export class DatabaseStorage implements IStorage {
     if (data.avatar !== undefined) updateData.avatar = data.avatar;
     if (data.bio !== undefined) updateData.bio = data.bio;
 
+    if (Object.keys(updateData).length === 0) {
+      return this.getUser(id);
+    }
     const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
     return updated;
   }
@@ -316,6 +321,41 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(rucks.createdAt))
       .limit(limit);
     return results;
+  }
+
+  async getLeaderboard(period: 'weekly' | 'monthly', metric: 'distance' | 'weight'): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>> {
+    const now = new Date();
+    const cutoff = new Date();
+    if (period === 'weekly') {
+      cutoff.setDate(now.getDate() - 7);
+    } else {
+      cutoff.setDate(now.getDate() - 30);
+    }
+
+    const orderCol = metric === 'distance'
+      ? sql<number>`COALESCE(SUM(${rucks.distance}), 0)`
+      : sql<number>`COALESCE(SUM(COALESCE(${rucks.weight}, 0) * COALESCE(${rucks.distance}, 0) / 100), 0)`;
+
+    const results = await db
+      .select({
+        userId: users.id,
+        name: users.name,
+        username: users.username,
+        avatar: users.avatar,
+        totalDistance: sql<number>`COALESCE(SUM(${rucks.distance}), 0)`.as('total_distance'),
+        totalWeight: sql<number>`COALESCE(SUM(COALESCE(${rucks.weight}, 0) * COALESCE(${rucks.distance}, 0) / 100), 0)`.as('total_weight'),
+      })
+      .from(users)
+      .leftJoin(rucks, sql`${rucks.userId} = ${users.id} AND ${rucks.createdAt} >= ${cutoff}`)
+      .groupBy(users.id, users.name, users.username, users.avatar)
+      .orderBy(desc(orderCol))
+      .limit(50);
+
+    return results.map(r => ({
+      ...r,
+      totalDistance: Number(r.totalDistance),
+      totalWeight: Number(r.totalWeight),
+    }));
   }
 }
 
