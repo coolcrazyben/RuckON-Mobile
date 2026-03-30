@@ -14,7 +14,7 @@ RuckON is a fitness/community mobile app for ruckers (people who walk/hike with 
 
 - Email/password sign-up and sign-in
 - Google and Apple sign-in (OAuth buttons wired, ready for real OAuth credentials)
-- Session-based auth with Bearer tokens stored in AsyncStorage
+- Session-based auth with Bearer tokens stored in AsyncStorage (sessions kept in server memory; will reset on server restart)
 - Auth context in `lib/auth.tsx`, navigation guards in `app/_layout.tsx`
 - API endpoints: POST `/api/auth/register`, `/api/auth/login`, `/api/auth/google`, `/api/auth/apple`, GET `/api/auth/me`, POST `/api/auth/logout`
 
@@ -24,7 +24,7 @@ After registration, users complete a 2-step onboarding:
 1. Profile info: gender, weight, location (`app/onboarding.tsx`)
 2. Optional community joining with search (`app/join-communities.tsx`)
 
-API: PATCH `/api/user/onboarding`, GET `/api/communities`, POST `/api/communities/:id/join`
+API: PATCH `/api/user/onboarding`, GET `/api/communities`, GET `/api/communities/nearby` (auth, ranked by user location), POST `/api/communities/:id/join`
 
 ## Design System
 
@@ -70,7 +70,8 @@ constants/
 server/
   index.ts             # Express server, CORS, static files, landing page
   routes.ts            # Auth endpoints, community endpoints, onboarding
-  storage.ts           # In-memory storage (users, sessions, communities)
+  db.ts                # Drizzle/pg database connection
+  storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
 shared/
   schema.ts            # Drizzle schema (users, communities, userCommunities) + Zod validators
 ```

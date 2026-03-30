@@ -1,10 +1,15 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 
-function sanitizeUser(user: any) {
+interface AuthenticatedRequest extends Request {
+  authUser: User;
+  authToken: string;
+}
+
+function sanitizeUser(user: User) {
   const { password, ...rest } = user;
   return rest;
 }
@@ -19,8 +24,8 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   if (!user) {
     return res.status(401).json({ message: "Invalid session" });
   }
-  (req as any).user = user;
-  (req as any).token = token;
+  (req as AuthenticatedRequest).authUser = user;
+  (req as AuthenticatedRequest).authToken = token;
   next();
 }
 
@@ -99,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing Google credentials" });
       }
 
-      let user = await storage.getUserByGoogleId(googleId);
+      let user: User | undefined = await storage.getUserByGoogleId(googleId);
       if (!user) {
         user = await storage.getUserByEmail(email);
         if (user) {
@@ -135,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing Apple credentials" });
       }
 
-      let user = await storage.getUserByAppleId(appleId);
+      let user: User | undefined = await storage.getUserByAppleId(appleId);
       if (!user) {
         if (email) {
           user = await storage.getUserByEmail(email);
@@ -167,11 +172,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/auth/me", authMiddleware, async (req: Request, res: Response) => {
-    return res.json(sanitizeUser((req as any).user));
+    return res.json(sanitizeUser((req as AuthenticatedRequest).authUser));
   });
 
   app.post("/api/auth/logout", authMiddleware, async (req: Request, res: Response) => {
-    await storage.deleteSession((req as any).token);
+    await storage.deleteSession((req as AuthenticatedRequest).authToken);
     return res.json({ message: "Logged out" });
   });
 
@@ -182,7 +187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: result.error.issues[0].message });
       }
 
-      const user = (req as any).user;
+      const user = (req as AuthenticatedRequest).authUser;
       const updated = await storage.updateUser(user.id, {
         gender: result.data.gender,
         weight: result.data.weight,
@@ -203,10 +208,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/communities", async (req: Request, res: Response) => {
     try {
-      const query = req.query.q as string;
-      const communities = query
-        ? await storage.searchCommunities(query)
-        : await storage.getCommunities();
+      const query = req.query.q as string | undefined;
+      const userLocation = req.query.location as string | undefined;
+      let communities;
+      if (query) {
+        communities = await storage.searchCommunities(query);
+      } else if (userLocation) {
+        communities = await storage.getCommunitiesByLocation(userLocation);
+      } else {
+        communities = await storage.getCommunities();
+      }
       return res.json(communities);
     } catch (error) {
       console.error("Communities error:", error);
@@ -214,9 +225,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/communities/nearby", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const userLocation = user.location || "";
+      const communities = await storage.getCommunitiesByLocation(userLocation);
+      return res.json(communities);
+    } catch (error) {
+      console.error("Nearby communities error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.get("/api/user/communities", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = (req as AuthenticatedRequest).authUser;
       const communities = await storage.getUserCommunities(user.id);
       return res.json(communities);
     } catch (error) {
@@ -225,10 +248,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/communities/:id/join", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/communities/:id/join", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
     try {
-      const user = (req as any).user;
-      await storage.joinCommunity(user.id, req.params.id);
+      const user = (req as unknown as AuthenticatedRequest).authUser;
+      const communityId = req.params.id;
+      await storage.joinCommunity(user.id, communityId);
       return res.json({ message: "Joined community" });
     } catch (error) {
       console.error("Join community error:", error);
@@ -236,10 +260,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/communities/:id/leave", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/communities/:id/leave", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
     try {
-      const user = (req as any).user;
-      await storage.leaveCommunity(user.id, req.params.id);
+      const user = (req as unknown as AuthenticatedRequest).authUser;
+      const communityId = req.params.id;
+      await storage.leaveCommunity(user.id, communityId);
       return res.json({ message: "Left community" });
     } catch (error) {
       console.error("Leave community error:", error);

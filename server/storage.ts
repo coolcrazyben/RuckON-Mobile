@@ -1,4 +1,7 @@
 import type { User, InsertUser, Community, UserCommunity } from "@shared/schema";
+import { users, communities, userCommunities } from "@shared/schema";
+import { db } from "./db";
+import { eq, ilike, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -14,27 +17,170 @@ export interface IStorage {
   deleteSession(token: string): Promise<void>;
   getCommunities(): Promise<Community[]>;
   searchCommunities(query: string): Promise<Community[]>;
+  getCommunitiesByLocation(location: string): Promise<Community[]>;
   getUserCommunities(userId: string): Promise<Community[]>;
   joinCommunity(userId: string, communityId: string): Promise<void>;
   leaveCommunity(userId: string, communityId: string): Promise<void>;
+  seedCommunities(): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private sessions: Map<string, string>;
-  private communities: Map<string, Community>;
-  private userCommunities: Map<string, UserCommunity>;
+const sessions = new Map<string, string>();
 
-  constructor() {
-    this.users = new Map();
-    this.sessions = new Map();
-    this.communities = new Map();
-    this.userCommunities = new Map();
-    this.seedCommunities();
+export class DatabaseStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
-  private seedCommunities() {
-    const communities: Community[] = [
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.googleId, googleId));
+    return user;
+  }
+
+  async getUserByAppleId(appleId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.appleId, appleId));
+    return user;
+  }
+
+  async createUser(insertUser: Partial<User> & { username: string }): Promise<User> {
+    const [user] = await db.insert(users).values({
+      email: insertUser.email || null,
+      username: insertUser.username,
+      password: insertUser.password || null,
+      name: insertUser.name || null,
+      avatar: insertUser.avatar || null,
+      gender: insertUser.gender || null,
+      weight: insertUser.weight || null,
+      location: insertUser.location || null,
+      bio: insertUser.bio || null,
+      googleId: insertUser.googleId || null,
+      appleId: insertUser.appleId || null,
+      onboardingComplete: false,
+    }).returning();
+    return user;
+  }
+
+  async updateUser(id: string, data: Partial<User>): Promise<User | undefined> {
+    const updateData: Record<string, unknown> = {};
+    if (data.gender !== undefined) updateData.gender = data.gender;
+    if (data.weight !== undefined) updateData.weight = data.weight;
+    if (data.location !== undefined) updateData.location = data.location;
+    if (data.onboardingComplete !== undefined) updateData.onboardingComplete = data.onboardingComplete;
+    if (data.googleId !== undefined) updateData.googleId = data.googleId;
+    if (data.appleId !== undefined) updateData.appleId = data.appleId;
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.avatar !== undefined) updateData.avatar = data.avatar;
+    if (data.bio !== undefined) updateData.bio = data.bio;
+
+    const [updated] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async getSessionUser(token: string): Promise<User | undefined> {
+    const userId = sessions.get(token);
+    if (!userId) return undefined;
+    return this.getUser(userId);
+  }
+
+  async createSession(userId: string): Promise<string> {
+    const token = randomUUID();
+    sessions.set(token, userId);
+    return token;
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    sessions.delete(token);
+  }
+
+  async getCommunities(): Promise<Community[]> {
+    return db.select().from(communities);
+  }
+
+  async searchCommunities(query: string): Promise<Community[]> {
+    const pattern = `%${query}%`;
+    return db.select().from(communities).where(
+      or(
+        ilike(communities.name, pattern),
+        ilike(communities.description, pattern),
+        ilike(communities.category, pattern),
+        ilike(communities.location, pattern),
+      ),
+    );
+  }
+
+  async getCommunitiesByLocation(location: string): Promise<Community[]> {
+    if (!location) return this.getCommunities();
+    const allCommunities = await this.getCommunities();
+    const loc = location.toLowerCase();
+    const locationParts = loc.split(",").map((p) => p.trim()).filter(Boolean);
+    const nearby: Community[] = [];
+    const nationwide: Community[] = [];
+    const other: Community[] = [];
+
+    for (const c of allCommunities) {
+      const cLoc = (c.location || "").toLowerCase();
+      if (cLoc === "nationwide") {
+        nationwide.push(c);
+      } else if (
+        locationParts.some((part) => cLoc.includes(part)) ||
+        cLoc.includes(loc)
+      ) {
+        nearby.push(c);
+      } else {
+        other.push(c);
+      }
+    }
+
+    return [...nearby, ...nationwide, ...other];
+  }
+
+  async getUserCommunities(userId: string): Promise<Community[]> {
+    const joined = await db.select().from(userCommunities).where(eq(userCommunities.userId, userId));
+    if (joined.length === 0) return [];
+    const communityIds = joined.map((uc) => uc.communityId);
+    const result = await db.select().from(communities).where(
+      or(...communityIds.map((id) => eq(communities.id, id))),
+    );
+    return result;
+  }
+
+  async joinCommunity(userId: string, communityId: string): Promise<void> {
+    const existing = await db.select().from(userCommunities).where(
+      sql`${userCommunities.userId} = ${userId} AND ${userCommunities.communityId} = ${communityId}`,
+    );
+    if (existing.length > 0) return;
+    await db.insert(userCommunities).values({ userId, communityId });
+    await db.update(communities)
+      .set({ memberCount: sql`COALESCE(${communities.memberCount}, 0) + 1` })
+      .where(eq(communities.id, communityId));
+  }
+
+  async leaveCommunity(userId: string, communityId: string): Promise<void> {
+    const deleted = await db.delete(userCommunities).where(
+      sql`${userCommunities.userId} = ${userId} AND ${userCommunities.communityId} = ${communityId}`,
+    ).returning();
+    if (deleted.length > 0) {
+      await db.update(communities)
+        .set({ memberCount: sql`GREATEST(COALESCE(${communities.memberCount}, 0) - 1, 0)` })
+        .where(eq(communities.id, communityId));
+    }
+  }
+
+  async seedCommunities(): Promise<void> {
+    const existing = await db.select().from(communities);
+    if (existing.length > 0) return;
+
+    const seedData = [
       {
         id: "c1",
         name: "GORUCK Nation",
@@ -109,145 +255,8 @@ export class MemStorage implements IStorage {
       },
     ];
 
-    for (const c of communities) {
-      this.communities.set(c.id, c);
-    }
-  }
-
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.email === email,
-    );
-  }
-
-  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.googleId === googleId,
-    );
-  }
-
-  async getUserByAppleId(appleId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.appleId === appleId,
-    );
-  }
-
-  async createUser(insertUser: Partial<User> & { username: string }): Promise<User> {
-    const id = randomUUID();
-    const user: User = {
-      id,
-      email: insertUser.email || null,
-      username: insertUser.username,
-      password: insertUser.password || null,
-      name: insertUser.name || null,
-      avatar: insertUser.avatar || null,
-      gender: insertUser.gender || null,
-      weight: insertUser.weight || null,
-      location: insertUser.location || null,
-      bio: insertUser.bio || null,
-      googleId: insertUser.googleId || null,
-      appleId: insertUser.appleId || null,
-      onboardingComplete: false,
-      createdAt: new Date(),
-    };
-    this.users.set(id, user);
-    return user;
-  }
-
-  async updateUser(id: string, data: Partial<User>): Promise<User | undefined> {
-    const user = this.users.get(id);
-    if (!user) return undefined;
-    const updated = { ...user, ...data };
-    this.users.set(id, updated);
-    return updated;
-  }
-
-  async getSessionUser(token: string): Promise<User | undefined> {
-    const userId = this.sessions.get(token);
-    if (!userId) return undefined;
-    return this.users.get(userId);
-  }
-
-  async createSession(userId: string): Promise<string> {
-    const token = randomUUID();
-    this.sessions.set(token, userId);
-    return token;
-  }
-
-  async deleteSession(token: string): Promise<void> {
-    this.sessions.delete(token);
-  }
-
-  async getCommunities(): Promise<Community[]> {
-    return Array.from(this.communities.values());
-  }
-
-  async searchCommunities(query: string): Promise<Community[]> {
-    const q = query.toLowerCase();
-    return Array.from(this.communities.values()).filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q)) ||
-        (c.category && c.category.toLowerCase().includes(q)) ||
-        (c.location && c.location.toLowerCase().includes(q)),
-    );
-  }
-
-  async getUserCommunities(userId: string): Promise<Community[]> {
-    const joined = Array.from(this.userCommunities.values()).filter(
-      (uc) => uc.userId === userId,
-    );
-    return joined
-      .map((uc) => this.communities.get(uc.communityId))
-      .filter((c): c is Community => c !== undefined);
-  }
-
-  async joinCommunity(userId: string, communityId: string): Promise<void> {
-    const existing = Array.from(this.userCommunities.values()).find(
-      (uc) => uc.userId === userId && uc.communityId === communityId,
-    );
-    if (existing) return;
-    const id = randomUUID();
-    this.userCommunities.set(id, {
-      id,
-      userId,
-      communityId,
-      joinedAt: new Date(),
-    });
-    const community = this.communities.get(communityId);
-    if (community) {
-      this.communities.set(communityId, {
-        ...community,
-        memberCount: (community.memberCount || 0) + 1,
-      });
-    }
-  }
-
-  async leaveCommunity(userId: string, communityId: string): Promise<void> {
-    const entry = Array.from(this.userCommunities.entries()).find(
-      ([, uc]) => uc.userId === userId && uc.communityId === communityId,
-    );
-    if (entry) {
-      this.userCommunities.delete(entry[0]);
-      const community = this.communities.get(communityId);
-      if (community) {
-        this.communities.set(communityId, {
-          ...community,
-          memberCount: Math.max(0, (community.memberCount || 0) - 1),
-        });
-      }
-    }
+    await db.insert(communities).values(seedData);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

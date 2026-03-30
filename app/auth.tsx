@@ -50,8 +50,9 @@ export default function AuthScreen() {
       } else {
         await login(email.trim(), password);
       }
-    } catch (e: any) {
-      setError(e.message || 'Something went wrong');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Something went wrong';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -64,8 +65,9 @@ export default function AuthScreen() {
       const mockGoogleId = 'google_' + Date.now();
       const mockEmail = 'user@gmail.com';
       await loginWithGoogle(mockGoogleId, mockEmail, 'Google User');
-    } catch (e: any) {
-      setError(e.message || 'Google sign in failed');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Google sign in failed';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -77,8 +79,9 @@ export default function AuthScreen() {
     try {
       const mockAppleId = 'apple_' + Date.now();
       await loginWithApple(mockAppleId, 'user@icloud.com', 'Apple User');
-    } catch (e: any) {
-      setError(e.message || 'Apple sign in failed');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Apple sign in failed';
+      setError(message);
     } finally {
       setLoading(false);
     }

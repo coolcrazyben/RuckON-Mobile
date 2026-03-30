@@ -51,8 +51,9 @@ export default function OnboardingScreen() {
         location: location.trim(),
       });
       router.replace('/join-communities');
-    } catch (e: any) {
-      setError(e.message || 'Failed to save profile');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to save profile';
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -232,6 +232,9 @@ function setupErrorHandler(app: express.Application) {
 
   configureExpoAndLanding(app);
 
+  const { storage } = await import("./storage");
+  await storage.seedCommunities();
+
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);

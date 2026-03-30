@@ -30,7 +30,7 @@ interface CommunityItem {
 
 export default function JoinCommunitiesScreen() {
   const insets = useSafeAreaInsets();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [communities, setCommunities] = useState<CommunityItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
@@ -54,17 +54,26 @@ export default function JoinCommunitiesScreen() {
     try {
       setLoading(true);
       setError('');
-      const url = query
-        ? `${baseUrl}api/communities?q=${encodeURIComponent(query)}`
-        : `${baseUrl}api/communities`;
-      const res = await fetch(url);
+      let url: string;
+      if (query) {
+        url = `${baseUrl}api/communities?q=${encodeURIComponent(query)}`;
+      } else if (token && user?.location) {
+        url = `${baseUrl}api/communities/nearby`;
+      } else {
+        url = `${baseUrl}api/communities`;
+      }
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setCommunities(data);
       } else {
         setError('Failed to load communities');
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('Failed to fetch communities:', e);
       setError('Could not connect to server');
     } finally {
