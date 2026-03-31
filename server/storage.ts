@@ -632,27 +632,27 @@ export class DatabaseStorage implements IStorage {
       .from(userCommunities)
       .where(eq(userCommunities.communityId, communityId));
 
-    if (memberIds.length === 0) return [];
-
     const ids = memberIds.map(m => m.userId);
 
-    const ruckResults = await db
-      .select({
-        id: rucks.id,
-        userId: rucks.userId,
-        distance: rucks.distance,
-        durationSeconds: rucks.durationSeconds,
-        weight: rucks.weight,
-        notes: rucks.notes,
-        createdAt: rucks.createdAt,
-        userName: users.name,
-        userAvatar: users.avatar,
-      })
-      .from(rucks)
-      .leftJoin(users, eq(rucks.userId, users.id))
-      .where(inArray(rucks.userId, ids))
-      .orderBy(desc(rucks.createdAt))
-      .limit(50);
+    const ruckResults = ids.length > 0
+      ? await db
+          .select({
+            id: rucks.id,
+            userId: rucks.userId,
+            distance: rucks.distance,
+            durationSeconds: rucks.durationSeconds,
+            weight: rucks.weight,
+            notes: rucks.notes,
+            createdAt: rucks.createdAt,
+            userName: users.name,
+            userAvatar: users.avatar,
+          })
+          .from(rucks)
+          .leftJoin(users, eq(rucks.userId, users.id))
+          .where(inArray(rucks.userId, ids))
+          .orderBy(desc(rucks.createdAt))
+          .limit(50)
+      : [];
 
     const postResults = await db
       .select({
