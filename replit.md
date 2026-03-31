@@ -95,7 +95,7 @@ server/
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory, social features)
   moderation.ts        # Content moderation (word-boundary profanity filter with leetspeak detection)
 shared/
-  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, ruckLikes, ruckComments, friendships) + Zod validators
+  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, ruckLikes, ruckComments, friendships, notifications) + Zod validators
 ```
 
 ## Features
@@ -122,6 +122,8 @@ shared/
 - **Tappable Challenges:** Pinned challenges, challenges tab items, and challenge announcements in community feed all navigate to challenge detail screen.
 - **Ruck Detail:** Real API-powered detail screen at `app/ruck/[id].tsx`. GET `/api/rucks/:id` returns ruck with user info, like count, comment count, and whether requesting user has liked it. 6-stat grid (miles, duration, weight, pace, lbs moved, pack weight). GPS route displayed on RuckMap when available. Notes section. Like toggle with spring animation (POST `/api/rucks/:id/like`). Real comments with avatars/timestamps (GET/POST `/api/rucks/:id/comments`). Comment input with send button.
 - **Social System:** `ruck_likes` table with unique (ruckId, userId) constraint. `ruck_comments` table (id, ruckId, userId, content, createdAt). Feed cards show real like/comment counts. Tapping a ruck card in the feed navigates to the detail screen.
+- **Notifications:** `notifications` table (id, userId, type, referenceId, fromUserId, message, read, createdAt). Created on like, comment, friend request, friend accept. Bell icon on feed with unread badge count. Dedicated notifications screen at `app/notifications.tsx` with avatar, type-colored icon badges, time-ago, tap-to-navigate. Auto-marks read on view.
+- **Achievements:** 12 real milestone badges computed from actual ruck stats (First Ruck, 10/25 Rucks, 10/50/100/500 Miles, Heavy Hauler, Iron Back, Pack Leader, Ton Hauler, Beast Mode). GET `/api/user/achievements` endpoint. No mock data — all earned from real activity.
 
 ## Key Dependencies
 

@@ -148,6 +148,7 @@ export default function FeedScreen() {
   const [rucks, setRucks] = useState<FeedRuck[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const baseUrl = (() => {
     try { return getApiUrl(); } catch { return null; }
@@ -169,6 +170,12 @@ export default function FeedScreen() {
         setLoading(false);
         setRefreshing(false);
       });
+    if (token) {
+      fetch(`${baseUrl}api/notifications/unread-count`, { headers })
+        .then(r => r.ok ? r.json() : { count: 0 })
+        .then(data => setUnreadCount(data.count || 0))
+        .catch(() => {});
+    }
   }, [baseUrl, token]);
 
   useFocusEffect(
@@ -189,8 +196,13 @@ export default function FeedScreen() {
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Text style={styles.wordmark}>RUCKON</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.bellBtn}>
           <Ionicons name="notifications-outline" size={24} color={Colors.bone} />
+          {unreadCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -355,5 +367,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: Colors.textMuted,
+  },
+  bellBtn: {
+    position: 'relative',
+    padding: 4,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: Colors.burntOrange,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: Colors.charcoal,
+  },
+  bellBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    color: Colors.bone,
   },
 });

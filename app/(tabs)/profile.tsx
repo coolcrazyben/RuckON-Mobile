@@ -18,7 +18,14 @@ import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
-import { MOCK_ACHIEVEMENTS, type Achievement } from '@/data/mockData';
+
+interface Achievement {
+  id: string;
+  title: string;
+  icon: string;
+  earned: boolean;
+  description: string;
+}
 
 interface RuckData {
   id: string;
@@ -123,6 +130,7 @@ export default function ProfileScreen() {
   const [rucks, setRucks] = useState<RuckData[]>([]);
   const [stats, setStats] = useState<RuckStats>({ totalMiles: 0, totalRucks: 0, weightMoved: 0 });
   const [communities, setCommunities] = useState<CommunityData[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [friendCount, setFriendCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -145,12 +153,14 @@ export default function ProfileScreen() {
         fetch(`${baseUrl}api/user/communities`, { headers }).then(r => r.ok ? r.json() : []),
         fetch(`${baseUrl}api/friends`, { headers }).then(r => r.ok ? r.json() : []),
         fetch(`${baseUrl}api/friends/pending`, { headers }).then(r => r.ok ? r.json() : []),
-      ]).then(([rucksData, statsData, commData, friendsData, pendingData]) => {
+        fetch(`${baseUrl}api/user/achievements`, { headers }).then(r => r.ok ? r.json() : []),
+      ]).then(([rucksData, statsData, commData, friendsData, pendingData, achievementsData]) => {
         setRucks(rucksData);
         setStats(statsData);
         setCommunities(commData);
         setFriendCount(friendsData.length);
         setPendingCount(pendingData.length);
+        setAchievements(achievementsData);
       }).catch(() => {}).finally(() => setLoading(false));
     }, [token, baseUrl])
   );
@@ -272,11 +282,19 @@ export default function ProfileScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>ACHIEVEMENTS</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
-          {MOCK_ACHIEVEMENTS.map((a) => (
-            <AchievementBadge key={a.id} achievement={a} />
-          ))}
-        </ScrollView>
+        {achievements.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 16 }}>
+            {achievements.map((a) => (
+              <AchievementBadge key={a.id} achievement={a} />
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={32} color={Colors.textMuted} />
+            <Text style={styles.emptyStateTitle}>No achievements yet</Text>
+            <Text style={styles.emptyStateText}>Start rucking to earn badges</Text>
+          </View>
+        )}
       </View>
 
       <View style={[styles.section, { marginTop: 24 }]}>

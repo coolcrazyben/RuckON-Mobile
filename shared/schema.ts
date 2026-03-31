@@ -119,6 +119,19 @@ export const ruckComments = pgTable("ruck_comments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const notifications = pgTable("notifications", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  type: text("type").notNull(),
+  referenceId: varchar("reference_id"),
+  fromUserId: varchar("from_user_id"),
+  message: text("message").notNull(),
+  read: boolean("read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const friendships = pgTable("friendships", {
   id: varchar("id")
     .primaryKey()
@@ -210,3 +223,4 @@ export type ChallengeParticipant = typeof challengeParticipants.$inferSelect;
 export type CommunityPost = typeof communityPosts.$inferSelect;
 export type RuckLike = typeof ruckLikes.$inferSelect;
 export type RuckComment = typeof ruckComments.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

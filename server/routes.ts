@@ -393,6 +393,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/notifications", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const [notifs, unreadCount] = await Promise.all([
+        storage.getNotifications(user.id),
+        storage.getUnreadNotificationCount(user.id),
+      ]);
+      return res.json({ notifications: notifs, unreadCount });
+    } catch (error) {
+      console.error("Get notifications error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/notifications/read", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      await storage.markNotificationsRead(user.id);
+      return res.json({ message: "Notifications marked as read" });
+    } catch (error) {
+      console.error("Mark notifications read error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const count = await storage.getUnreadNotificationCount(user.id);
+      return res.json({ count });
+    } catch (error) {
+      console.error("Unread count error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/user/achievements", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const achievements = await storage.getUserAchievements(user.id);
+      return res.json(achievements);
+    } catch (error) {
+      console.error("Get achievements error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/rucks/:id/share", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
     try {
       const user = (req as AuthenticatedRequest).authUser;
@@ -432,6 +479,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ruck = await storage.getRuck(req.params.id);
       if (!ruck) return res.status(404).json({ message: "Ruck not found" });
       const result = await storage.toggleRuckLike(req.params.id, user.id);
+      if (result.liked) {
+        storage.createNotification({
+          userId: ruck.userId,
+          type: 'like',
+          referenceId: ruck.id,
+          fromUserId: user.id,
+          message: `${user.name || user.username} liked your ruck`,
+        }).catch(() => {});
+      }
       return res.json(result);
     } catch (error) {
       console.error("Toggle like error:", error);
@@ -464,6 +520,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Comment must be under 500 characters" });
       }
       const comment = await storage.addRuckComment(req.params.id, user.id, content.trim());
+      storage.createNotification({
+        userId: ruck.userId,
+        type: 'comment',
+        referenceId: ruck.id,
+        fromUserId: user.id,
+        message: `${user.name || user.username} commented on your ruck`,
+      }).catch(() => {});
       return res.status(201).json(comment);
     } catch (error) {
       console.error("Add comment error:", error);
@@ -870,6 +933,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       const friendship = await storage.sendFriendRequest(authUser.id, addresseeId);
+      storage.createNotification({
+        userId: addresseeId,
+        type: 'friend_request',
+        referenceId: friendship.id,
+        fromUserId: authUser.id,
+        message: `${authUser.name || authUser.username} sent you a friend request`,
+      }).catch(() => {});
       return res.status(201).json(friendship);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Internal server error";
@@ -885,6 +955,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as unknown as AuthenticatedRequest).authUser;
       const friendship = await storage.acceptFriendRequest(req.params.id, authUser.id);
+      storage.createNotification({
+        userId: friendship.requesterId,
+        type: 'friend_accepted',
+        referenceId: friendship.id,
+        fromUserId: authUser.id,
+        message: `${authUser.name || authUser.username} accepted your friend request`,
+      }).catch(() => {});
       return res.json(friendship);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Internal server error";

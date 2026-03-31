@@ -1,5 +1,5 @@
-import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost, Friendship, RuckLike, RuckComment } from "@shared/schema";
-import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships, ruckLikes, ruckComments } from "@shared/schema";
+import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost, Friendship, RuckLike, RuckComment, Notification } from "@shared/schema";
+import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships, ruckLikes, ruckComments, notifications } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -71,6 +71,11 @@ export interface IStorage {
   getRuckComments(ruckId: string): Promise<Array<{ id: string; userId: string; content: string; createdAt: Date | null; userName: string | null; userAvatar: string | null }>>;
   addRuckComment(ruckId: string, userId: string, content: string): Promise<{ id: string; userId: string; content: string; createdAt: Date | null; userName: string | null; userAvatar: string | null }>;
   getRuckLikeAndCommentCounts(ruckIds: string[]): Promise<Map<string, { likeCount: number; commentCount: number }>>;
+  createNotification(data: { userId: string; type: string; referenceId?: string; fromUserId?: string; message: string }): Promise<void>;
+  getNotifications(userId: string): Promise<Array<{ id: string; userId: string; type: string; referenceId: string | null; fromUserId: string | null; message: string; read: boolean; createdAt: string | null; fromUserName: string | null; fromUserAvatar: string | null }>>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  markNotificationsRead(userId: string): Promise<void>;
+  getUserAchievements(userId: string): Promise<Array<{ id: string; title: string; icon: string; earned: boolean; description: string }>>;
 }
 
 const sessions = new Map<string, string>();
@@ -1088,6 +1093,84 @@ export class DatabaseStorage implements IStorage {
       feed,
       challenges: enrichedChallenges,
     };
+  }
+
+  async createNotification(data: { userId: string; type: string; referenceId?: string; fromUserId?: string; message: string }): Promise<void> {
+    if (data.userId === data.fromUserId) return;
+    await db.insert(notifications).values({
+      userId: data.userId,
+      type: data.type,
+      referenceId: data.referenceId || null,
+      fromUserId: data.fromUserId || null,
+      message: data.message,
+    });
+  }
+
+  async getNotifications(userId: string, limit = 50): Promise<Array<Notification & { fromUserName: string | null; fromUserAvatar: string | null }>> {
+    return db
+      .select({
+        id: notifications.id,
+        userId: notifications.userId,
+        type: notifications.type,
+        referenceId: notifications.referenceId,
+        fromUserId: notifications.fromUserId,
+        message: notifications.message,
+        read: notifications.read,
+        createdAt: notifications.createdAt,
+        fromUserName: users.name,
+        fromUserAvatar: users.avatar,
+      })
+      .from(notifications)
+      .leftJoin(users, eq(notifications.fromUserId, users.id))
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+    return Number(row?.count || 0);
+  }
+
+  async markNotificationsRead(userId: string): Promise<void> {
+    await db.update(notifications)
+      .set({ read: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+  }
+
+  async getUserAchievements(userId: string): Promise<Array<{ id: string; title: string; icon: string; description: string; earned: boolean }>> {
+    const stats = await this.getUserRuckStats(userId);
+    const userRucksData = await this.getUserRucks(userId);
+
+    const maxWeight = userRucksData.reduce((max, r) => Math.max(max, r.weight || 0), 0);
+    const hasHeavyLongRuck = userRucksData.some(r => (r.weight || 0) >= 50 && ((r.distance || 0) / 100) >= 5);
+    const communityCount = (await this.getUserCommunities(userId)).length;
+
+    const allAchievements = [
+      { id: 'a1', title: 'First Ruck', icon: 'footsteps', description: 'Complete your first ruck', check: () => stats.totalRucks >= 1 },
+      { id: 'a2', title: '10 Rucks', icon: 'medal', description: 'Complete 10 rucks', check: () => stats.totalRucks >= 10 },
+      { id: 'a3', title: '25 Rucks', icon: 'ribbon', description: 'Complete 25 rucks', check: () => stats.totalRucks >= 25 },
+      { id: 'a4', title: '10 Miles', icon: 'map', description: 'Log 10 total miles', check: () => stats.totalMiles >= 10 },
+      { id: 'a5', title: '50 Miles', icon: 'navigate', description: 'Log 50 total miles', check: () => stats.totalMiles >= 50 },
+      { id: 'a6', title: '100 Miles', icon: 'trophy', description: 'Log 100 total miles', check: () => stats.totalMiles >= 100 },
+      { id: 'a7', title: '500 Miles', icon: 'star', description: 'Log 500 total miles', check: () => stats.totalMiles >= 500 },
+      { id: 'a8', title: 'Heavy Hauler', icon: 'fitness', description: 'Carry 50+ lbs for 5+ miles', check: () => hasHeavyLongRuck },
+      { id: 'a9', title: 'Iron Back', icon: 'barbell', description: 'Ruck with 75+ lbs', check: () => maxWeight >= 75 },
+      { id: 'a10', title: 'Pack Leader', icon: 'people', description: 'Join 3 communities', check: () => communityCount >= 3 },
+      { id: 'a11', title: 'Ton Hauler', icon: 'cube', description: 'Move 2,000+ total lbs', check: () => stats.weightMoved >= 2000 },
+      { id: 'a12', title: 'Beast Mode', icon: 'flame', description: 'Move 10,000+ total lbs', check: () => stats.weightMoved >= 10000 },
+    ];
+
+    return allAchievements.map(a => ({
+      id: a.id,
+      title: a.title,
+      icon: a.icon,
+      description: a.description,
+      earned: a.check(),
+    }));
   }
 }
 
