@@ -382,6 +382,20 @@ export default function CommunityDetailScreen() {
     } catch {}
   };
 
+  const handleDeclineFriendFromList = async (memberId: string) => {
+    const fs = friendStatuses[memberId];
+    if (!baseUrl || !token || !fs?.friendshipId) return;
+    try {
+      const res = await fetch(`${baseUrl}api/friends/${fs.friendshipId}/decline`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setFriendStatuses(prev => ({ ...prev, [memberId]: { status: 'none' } }));
+      }
+    } catch {}
+  };
+
   const toggleChallengeJoin = async (challengeId: string) => {
     if (!baseUrl || !token) return;
     const isJoined = joinedChallengeIds.has(challengeId);
@@ -587,9 +601,14 @@ export default function CommunityDetailScreen() {
                     }
                     if (fs.status === 'pending' && fs.direction === 'received') {
                       return (
-                        <TouchableOpacity style={[styles.memberFriendBtn, styles.memberFriendBtnAccept]} onPress={() => handleAcceptFriendFromList(member.id)}>
-                          <Ionicons name="checkmark" size={14} color={Colors.bone} />
-                        </TouchableOpacity>
+                        <View style={styles.memberFriendRow}>
+                          <TouchableOpacity style={[styles.memberFriendBtn, styles.memberFriendBtnAccept]} onPress={() => handleAcceptFriendFromList(member.id)}>
+                            <Ionicons name="checkmark" size={14} color={Colors.bone} />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.memberFriendBtn, styles.memberFriendBtnPending]} onPress={() => handleDeclineFriendFromList(member.id)}>
+                            <Ionicons name="close" size={14} color={Colors.textMuted} />
+                          </TouchableOpacity>
+                        </View>
                       );
                     }
                     if (fs.status === 'pending') {
@@ -1099,6 +1118,11 @@ const styles = StyleSheet.create({
   },
   memberFriendBtnFriend: {
     borderColor: Colors.mossGreen,
+  },
+  memberFriendRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginLeft: 8,
   },
   subTitle: {
     fontFamily: 'Oswald_600SemiBold',
