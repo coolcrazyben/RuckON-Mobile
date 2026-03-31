@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,65 +6,348 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  FlatList,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
-import {
-  MOCK_COMMUNITIES,
-  COMMUNITY_FEED,
-  COMMUNITY_MEMBERS,
-  MOCK_CHALLENGES,
-  MOCK_LEADERBOARD,
-  type Ruck,
-} from '@/data/mockData';
+import { useAuth } from '@/lib/auth';
+import { getApiUrl } from '@/lib/query-client';
+
+interface CommunityDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number | null;
+  banner: string | null;
+  category: string | null;
+  location: string | null;
+  createdBy: string | null;
+  creatorName: string | null;
+}
+
+interface MemberData {
+  id: string;
+  name: string | null;
+  username: string;
+  avatar: string | null;
+  location: string | null;
+  joinedAt: string | null;
+  role: string;
+}
+
+interface FeedRuck {
+  id: string;
+  userId: string;
+  distance: number | null;
+  durationSeconds: number | null;
+  weight: number | null;
+  notes: string | null;
+  createdAt: string | null;
+  userName: string | null;
+  userAvatar: string | null;
+}
+
+interface LeaderboardEntry {
+  userId: string;
+  name: string | null;
+  username: string;
+  avatar: string | null;
+  totalDistance: number;
+  totalWeight: number;
+}
+
+interface ChallengeData {
+  id: string;
+  communityId: string;
+  title: string;
+  description: string | null;
+  challengeType: string;
+  goalValue: number;
+  goalUnit: string;
+  endDate: string;
+  createdBy: string;
+  participantCount: number;
+}
 
 type CommunityTab = 'feed' | 'members' | 'leaderboard' | 'challenges';
 
-function MiniRuckCard({ ruck }: { ruck: Ruck }) {
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function formatTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
+function MiniRuckCard({ ruck }: { ruck: FeedRuck }) {
+  const distMiles = (ruck.distance || 0) / 100;
   return (
-    <TouchableOpacity
-      style={styles.miniCard}
-      onPress={() => router.push({ pathname: '/ruck/[id]', params: { id: ruck.id } })}
-      activeOpacity={0.85}
-    >
+    <View style={styles.miniCard}>
       <View style={styles.miniCardHeader}>
-        <Image source={{ uri: ruck.userAvatar }} style={styles.miniAvatar} />
+        {ruck.userAvatar ? (
+          <Image source={{ uri: ruck.userAvatar }} style={styles.miniAvatar} />
+        ) : (
+          <View style={[styles.miniAvatar, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
+            <Ionicons name="person" size={14} color={Colors.bone} />
+          </View>
+        )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.miniUserName}>{ruck.userName}</Text>
-          <Text style={styles.miniDate}>{ruck.date}</Text>
+          <Text style={styles.miniUserName}>{ruck.userName || 'Unknown'}</Text>
+          {ruck.createdAt && <Text style={styles.miniDate}>{formatTimeAgo(ruck.createdAt)}</Text>}
         </View>
       </View>
-      <Image source={{ uri: ruck.photo }} style={styles.miniPhoto} />
+      {ruck.notes && (
+        <Text style={styles.miniNotes} numberOfLines={2}>{ruck.notes}</Text>
+      )}
       <View style={styles.miniStats}>
-        <Text style={styles.miniStat}>{ruck.distance} mi</Text>
-        <Text style={styles.miniStatDot}>·</Text>
-        <Text style={styles.miniStat}>{ruck.weight} lbs</Text>
-        <Text style={styles.miniStatDot}>·</Text>
-        <Text style={styles.miniStat}>{ruck.pace}/mi</Text>
+        <View style={styles.miniStatItem}>
+          <Ionicons name="navigate-outline" size={13} color={Colors.burntOrange} />
+          <Text style={styles.miniStat}>{distMiles.toFixed(1)} mi</Text>
+        </View>
+        {ruck.weight && ruck.weight > 0 && (
+          <View style={styles.miniStatItem}>
+            <Ionicons name="barbell-outline" size={13} color={Colors.burntOrange} />
+            <Text style={styles.miniStat}>{ruck.weight} lbs</Text>
+          </View>
+        )}
+        {ruck.durationSeconds && ruck.durationSeconds > 0 && (
+          <View style={styles.miniStatItem}>
+            <Ionicons name="time-outline" size={13} color={Colors.burntOrange} />
+            <Text style={styles.miniStat}>{formatDuration(ruck.durationSeconds)}</Text>
+          </View>
+        )}
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
 export default function CommunityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const community = MOCK_COMMUNITIES.find((c) => c.id === id) ?? MOCK_COMMUNITIES[0];
+  const { token, user } = useAuth();
 
+  const [community, setCommunity] = useState<CommunityDetail | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<CommunityTab>('feed');
-  const [joined, setJoined] = useState(community.isJoined);
+  const [joined, setJoined] = useState(false);
+  const [joiningLoading, setJoiningLoading] = useState(false);
+
+  const [members, setMembers] = useState<MemberData[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  const [feed, setFeed] = useState<FeedRuck[]>([]);
+  const [feedLoading, setFeedLoading] = useState(false);
+
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [lbLoading, setLbLoading] = useState(false);
+
+  const [challengeList, setChallengeList] = useState<ChallengeData[]>([]);
+  const [challengesLoading, setChallengesLoading] = useState(false);
+  const [joinedChallengeIds, setJoinedChallengeIds] = useState<Set<string>>(new Set());
+
+  const baseUrl = (() => {
+    try { return getApiUrl(); } catch { return null; }
+  })();
+
+  const isCreator = community?.createdBy === user?.id;
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const fetchCommunity = useCallback(async () => {
+    if (!baseUrl || !id) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCommunity(data);
+      }
+    } catch {}
+    setLoading(false);
+  }, [baseUrl, id]);
+
+  const checkJoinStatus = useCallback(async () => {
+    if (!baseUrl || !token) return;
+    try {
+      const res = await fetch(`${baseUrl}api/user/communities`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJoined(data.some((c: { id: string }) => c.id === id));
+      }
+    } catch {}
+  }, [baseUrl, token, id]);
+
+  const fetchMembers = useCallback(async () => {
+    if (!baseUrl || !id) return;
+    setMembersLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${id}/members`);
+      if (res.ok) setMembers(await res.json());
+    } catch {}
+    setMembersLoading(false);
+  }, [baseUrl, id]);
+
+  const fetchFeed = useCallback(async () => {
+    if (!baseUrl || !id) return;
+    setFeedLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${id}/feed`);
+      if (res.ok) setFeed(await res.json());
+    } catch {}
+    setFeedLoading(false);
+  }, [baseUrl, id]);
+
+  const fetchLeaderboard = useCallback(async () => {
+    if (!baseUrl || !id) return;
+    setLbLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${id}/leaderboard`);
+      if (res.ok) setLeaderboard(await res.json());
+    } catch {}
+    setLbLoading(false);
+  }, [baseUrl, id]);
+
+  const fetchChallenges = useCallback(async () => {
+    if (!baseUrl || !id) return;
+    setChallengesLoading(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${baseUrl}api/communities/${id}/challenges`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setChallengeList(data);
+        const joinedIds = new Set<string>();
+        for (const ch of data) {
+          if (ch.isJoined) joinedIds.add(ch.id);
+        }
+        setJoinedChallengeIds(joinedIds);
+      }
+    } catch {}
+    setChallengesLoading(false);
+  }, [baseUrl, id, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchCommunity();
+      checkJoinStatus();
+      fetchFeed();
+      fetchMembers();
+      fetchLeaderboard();
+      fetchChallenges();
+    }, [fetchCommunity, checkJoinStatus, fetchFeed, fetchMembers, fetchLeaderboard, fetchChallenges])
+  );
+
+  const toggleJoin = async () => {
+    if (!baseUrl || !token || joiningLoading) return;
+    const endpoint = joined ? 'leave' : 'join';
+    setJoiningLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/communities/${id}/${endpoint}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setJoined(!joined);
+        fetchCommunity();
+        fetchMembers();
+      }
+    } catch {}
+    setJoiningLoading(false);
+  };
+
+  const handleKickMember = (memberId: string, memberName: string | null) => {
+    Alert.alert(
+      'Remove Member',
+      `Remove ${memberName || 'this member'} from the community?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (!baseUrl || !token) return;
+            try {
+              const res = await fetch(`${baseUrl}api/communities/${id}/members/${memberId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.ok) {
+                fetchMembers();
+                fetchCommunity();
+              }
+            } catch {}
+          },
+        },
+      ],
+    );
+  };
+
+  const toggleChallengeJoin = async (challengeId: string) => {
+    if (!baseUrl || !token) return;
+    const isJoined = joinedChallengeIds.has(challengeId);
+    const endpoint = isJoined ? 'leave' : 'join';
+    try {
+      const res = await fetch(`${baseUrl}api/challenges/${challengeId}/${endpoint}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setJoinedChallengeIds(prev => {
+          const next = new Set(prev);
+          if (isJoined) next.delete(challengeId);
+          else next.add(challengeId);
+          return next;
+        });
+        fetchChallenges();
+      }
+    } catch {}
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { paddingTop: topPad + 40 }]}>
+        <ActivityIndicator color={Colors.burntOrange} size="large" />
+      </View>
+    );
+  }
+
+  if (!community) {
+    return (
+      <View style={[styles.container, { paddingTop: topPad + 40, alignItems: 'center' }]}>
+        <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
+        <Text style={[styles.communityName, { fontSize: 18, marginTop: 12 }]}>Community not found</Text>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ color: Colors.burntOrange, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container]}>
+    <View style={styles.container}>
       <View style={styles.bannerContainer}>
-        <Image source={{ uri: community.banner }} style={styles.banner} />
+        {community.banner ? (
+          <Image source={{ uri: community.banner }} style={styles.banner} />
+        ) : (
+          <View style={[styles.banner, { backgroundColor: Colors.forestGreen }]} />
+        )}
         <View style={styles.bannerOverlay} />
         <View style={[styles.backBtn, { top: topPad + 8 }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backPress}>
@@ -72,13 +355,22 @@ export default function CommunityDetailScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.bannerContent}>
-          <Text style={styles.categoryBadge}>{community.category.toUpperCase()}</Text>
+          {community.category && (
+            <Text style={styles.categoryBadge}>{community.category.toUpperCase()}</Text>
+          )}
           <Text style={styles.communityName}>{community.name}</Text>
           <View style={styles.membersRow}>
             <Ionicons name="people" size={14} color={Colors.textSecondary} />
             <Text style={styles.membersText}>
-              {community.memberCount.toLocaleString()} members
+              {(community.memberCount || 0).toLocaleString()} members
             </Text>
+            {community.location && (
+              <>
+                <Text style={styles.membersText}> · </Text>
+                <Ionicons name="location" size={12} color={Colors.textSecondary} />
+                <Text style={styles.membersText}>{community.location}</Text>
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -89,11 +381,16 @@ export default function CommunityDetailScreen() {
         </Text>
         <TouchableOpacity
           style={[styles.joinBtn, joined && styles.joinBtnJoined]}
-          onPress={() => setJoined((p) => !p)}
+          onPress={toggleJoin}
+          disabled={joiningLoading}
         >
-          <Text style={[styles.joinBtnText, joined && styles.joinBtnTextJoined]}>
-            {joined ? 'Joined' : 'Join'}
-          </Text>
+          {joiningLoading ? (
+            <ActivityIndicator size="small" color={Colors.bone} />
+          ) : (
+            <Text style={[styles.joinBtnText, joined && styles.joinBtnTextJoined]}>
+              {joined ? 'Joined' : 'Join'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -117,90 +414,185 @@ export default function CommunityDetailScreen() {
       >
         {activeTab === 'feed' && (
           <View style={styles.tabContent}>
-            {COMMUNITY_FEED.map((r) => (
-              <MiniRuckCard key={r.id} ruck={r} />
-            ))}
+            {feedLoading ? (
+              <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 30 }} />
+            ) : feed.length === 0 ? (
+              <View style={styles.emptyTab}>
+                <Ionicons name="newspaper-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>No rucks yet from community members</Text>
+              </View>
+            ) : (
+              feed.map((r) => <MiniRuckCard key={r.id} ruck={r} />)
+            )}
           </View>
         )}
 
         {activeTab === 'members' && (
           <View style={styles.tabContent}>
-            {COMMUNITY_MEMBERS.map((member) => (
-              <View key={member.id} style={styles.memberRow}>
-                <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>{member.name}</Text>
-                  <Text style={styles.memberMeta}>{member.totalMiles} miles · {member.totalRucks} rucks</Text>
-                </View>
-                <Text style={styles.memberLocation}>{member.location}</Text>
+            {membersLoading ? (
+              <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 30 }} />
+            ) : members.length === 0 ? (
+              <View style={styles.emptyTab}>
+                <Ionicons name="people-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>No members yet</Text>
               </View>
-            ))}
+            ) : (
+              members.map((member) => (
+                <View key={member.id} style={styles.memberRow}>
+                  {member.avatar ? (
+                    <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
+                  ) : (
+                    <View style={[styles.memberAvatar, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
+                      <Ionicons name="person" size={18} color={Colors.bone} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.memberName}>{member.name || member.username}</Text>
+                      {member.role === 'creator' && (
+                        <View style={styles.creatorBadge}>
+                          <Text style={styles.creatorBadgeText}>Creator</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.memberMeta}>@{member.username}</Text>
+                  </View>
+                  {member.location && (
+                    <Text style={styles.memberLocation}>{member.location}</Text>
+                  )}
+                  {isCreator && member.role !== 'creator' && (
+                    <TouchableOpacity
+                      style={styles.kickBtn}
+                      onPress={() => handleKickMember(member.id, member.name)}
+                    >
+                      <Ionicons name="remove-circle-outline" size={20} color={Colors.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))
+            )}
           </View>
         )}
 
         {activeTab === 'leaderboard' && (
           <View style={styles.tabContent}>
             <Text style={styles.subTitle}>COMMUNITY LEADERS</Text>
-            {MOCK_LEADERBOARD.map((entry) => (
-              <View
-                key={entry.id}
-                style={[styles.lbRow, entry.isCurrentUser && styles.lbRowCurrent]}
-              >
-                <Text
-                  style={[
-                    styles.lbRank,
-                    entry.rank <= 3 && {
-                      color:
-                        entry.rank === 1
-                          ? Colors.gold
-                          : entry.rank === 2
-                          ? Colors.silver
-                          : Colors.bronze,
-                    },
-                  ]}
-                >
-                  {entry.rank}
-                </Text>
-                <Image source={{ uri: entry.avatar }} style={styles.lbAvatar} />
-                <Text style={styles.lbName}>
-                  {entry.name} {entry.isCurrentUser ? '(you)' : ''}
-                </Text>
-                <Text style={styles.lbStat}>{entry.distance} mi</Text>
+            {lbLoading ? (
+              <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 30 }} />
+            ) : leaderboard.length === 0 ? (
+              <View style={styles.emptyTab}>
+                <Ionicons name="trophy-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>No ruck data yet</Text>
               </View>
-            ))}
+            ) : (
+              leaderboard.map((entry, idx) => {
+                const rank = idx + 1;
+                const isCurrent = entry.userId === user?.id;
+                return (
+                  <View
+                    key={entry.userId}
+                    style={[styles.lbRow, isCurrent && styles.lbRowCurrent]}
+                  >
+                    <Text
+                      style={[
+                        styles.lbRank,
+                        rank <= 3 && {
+                          color:
+                            rank === 1 ? Colors.gold : rank === 2 ? Colors.silver : Colors.bronze,
+                        },
+                      ]}
+                    >
+                      {rank}
+                    </Text>
+                    {entry.avatar ? (
+                      <Image source={{ uri: entry.avatar }} style={styles.lbAvatar} />
+                    ) : (
+                      <View style={[styles.lbAvatar, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="person" size={14} color={Colors.bone} />
+                      </View>
+                    )}
+                    <Text style={styles.lbName}>
+                      {entry.name || entry.username} {isCurrent ? '(you)' : ''}
+                    </Text>
+                    <Text style={styles.lbStat}>{(entry.totalDistance / 100).toFixed(1)} mi</Text>
+                  </View>
+                );
+              })
+            )}
           </View>
         )}
 
         {activeTab === 'challenges' && (
           <View style={styles.tabContent}>
-            {MOCK_CHALLENGES.map((ch) => (
-              <View key={ch.id} style={styles.challengeCard}>
-                <View style={styles.challengeTop}>
-                  <View style={styles.challengeIconWrap}>
-                    <Ionicons name="flash" size={18} color={Colors.burntOrange} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.challengeTitle}>{ch.title}</Text>
-                    <Text style={styles.challengeMeta}>Ends {ch.endDate}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.challengeJoinBtn}>
-                    <Text style={styles.challengeJoinText}>
-                      {ch.isJoined ? 'Joined' : 'Join'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.challengeDesc}>{ch.description}</Text>
-                <View style={styles.challengeFooter}>
-                  <Ionicons name="people-outline" size={13} color={Colors.textMuted} />
-                  <Text style={styles.challengeParticipants}>
-                    {ch.participants.toLocaleString()} participating
+            {isCreator && (
+              <TouchableOpacity
+                style={styles.createChallengeBtn}
+                onPress={() => router.push({ pathname: '/create-challenge', params: { communityId: id } })}
+              >
+                <Ionicons name="add-circle" size={20} color={Colors.bone} />
+                <Text style={styles.createChallengeBtnText}>Create Challenge</Text>
+              </TouchableOpacity>
+            )}
+            {challengesLoading ? (
+              <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 30 }} />
+            ) : challengeList.length === 0 ? (
+              <View style={styles.emptyTab}>
+                <Ionicons name="flash-outline" size={36} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>No challenges yet</Text>
+                {isCreator && (
+                  <Text style={[styles.emptyText, { fontSize: 12, marginTop: 4 }]}>
+                    Create the first challenge for your community!
                   </Text>
-                  <View style={styles.challengeGoalBadge}>
-                    <Text style={styles.challengeGoalText}>{ch.goal}</Text>
-                  </View>
-                </View>
+                )}
               </View>
-            ))}
+            ) : (
+              challengeList.map((ch) => {
+                const isJoinedCh = joinedChallengeIds.has(ch.id);
+                const endDate = new Date(ch.endDate);
+                const isExpired = endDate < new Date();
+                return (
+                  <View key={ch.id} style={styles.challengeCard}>
+                    <View style={styles.challengeTop}>
+                      <View style={styles.challengeIconWrap}>
+                        <Ionicons
+                          name={ch.challengeType === 'distance' ? 'navigate' : ch.challengeType === 'weight' ? 'barbell' : 'footsteps'}
+                          size={18}
+                          color={Colors.burntOrange}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.challengeTitle}>{ch.title}</Text>
+                        <Text style={styles.challengeMeta}>
+                          {isExpired ? 'Ended' : 'Ends'} {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      </View>
+                      {!isExpired && (
+                        <TouchableOpacity
+                          style={[styles.challengeJoinBtn, isJoinedCh && styles.challengeJoinBtnJoined]}
+                          onPress={() => toggleChallengeJoin(ch.id)}
+                        >
+                          <Text style={[styles.challengeJoinText, isJoinedCh && styles.challengeJoinTextJoined]}>
+                            {isJoinedCh ? 'Joined' : 'Join'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {ch.description && <Text style={styles.challengeDesc}>{ch.description}</Text>}
+                    <View style={styles.challengeFooter}>
+                      <Ionicons name="people-outline" size={13} color={Colors.textMuted} />
+                      <Text style={styles.challengeParticipants}>
+                        {ch.participantCount} participating
+                      </Text>
+                      <View style={styles.challengeGoalBadge}>
+                        <Text style={styles.challengeGoalText}>
+                          {ch.goalValue} {ch.goalUnit}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
           </View>
         )}
       </ScrollView>
@@ -288,6 +680,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: Colors.burntOrange,
     borderRadius: 8,
+    minWidth: 70,
+    alignItems: 'center',
   },
   joinBtnJoined: {
     backgroundColor: 'transparent',
@@ -335,17 +729,29 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  emptyTab: {
+    alignItems: 'center',
+    paddingTop: 40,
+    gap: 8,
+  },
+  emptyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
   miniCard: {
     backgroundColor: Colors.darkCard,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.cardBorder,
+    padding: 12,
+    gap: 8,
   },
   miniCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
     gap: 10,
   },
   miniAvatar: {
@@ -365,25 +771,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
   },
-  miniPhoto: {
-    width: '100%',
-    height: 150,
+  miniNotes: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 18,
   },
   miniStats: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    gap: 6,
+    gap: 14,
+  },
+  miniStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   miniStat: {
     fontFamily: 'Oswald_500Medium',
     fontSize: 14,
     color: Colors.bone,
-  },
-  miniStatDot: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    color: Colors.textMuted,
   },
   memberRow: {
     flexDirection: 'row',
@@ -406,17 +813,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
     color: Colors.bone,
-    marginBottom: 2,
   },
   memberMeta: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
     color: Colors.textMuted,
+    marginTop: 1,
   },
   memberLocation: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
     color: Colors.textMuted,
+  },
+  creatorBadge: {
+    backgroundColor: Colors.burntOrange,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  creatorBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 9,
+    color: Colors.bone,
+    letterSpacing: 0.5,
+  },
+  kickBtn: {
+    padding: 6,
   },
   subTitle: {
     fontFamily: 'Oswald_600SemiBold',
@@ -463,6 +885,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.bone,
   },
+  createChallengeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.burntOrange,
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  createChallengeBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+    color: Colors.bone,
+  },
   challengeCard: {
     backgroundColor: Colors.darkCard,
     borderRadius: 12,
@@ -501,10 +937,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.burntOrange,
     borderRadius: 8,
   },
+  challengeJoinBtnJoined: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: Colors.textMuted,
+  },
   challengeJoinText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13,
     color: Colors.bone,
+  },
+  challengeJoinTextJoined: {
+    color: Colors.textMuted,
   },
   challengeDesc: {
     fontFamily: 'Inter_400Regular',

@@ -61,6 +61,7 @@ app/
   join-communities.tsx # Community joining screen (optional, searchable)
   settings.tsx         # Settings screen (edit profile fields, logout)
   create-community.tsx # Community creation (name, description, category, location)
+  create-challenge.tsx # Challenge creation (title, description, type, goal, duration)
   (tabs)/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
     index.tsx          # Feed screen (real ruck data from API, pull-to-refresh)
@@ -91,7 +92,7 @@ server/
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
   moderation.ts        # Content moderation (word-boundary profanity filter with leetspeak detection)
 shared/
-  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks) + Zod validators
+  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants) + Zod validators
 ```
 
 ## Features
@@ -105,7 +106,9 @@ shared/
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
 - **Profile:** Real user data, live ruck stats, ruck history, real communities from API, profile picture upload via expo-image-picker (base64 data URI stored in DB), settings link, logout with confirmation dialog
 - **Settings:** Edit name, username (lowercase, unique), bio, location, weight via PATCH `/api/user/profile`; accessible from profile via settings icon
-- **Community Detail:** 4 inner tabs (Feed, Members, Leaderboard, Challenges)
+- **Community Detail:** Real data from API - 4 tabs (Feed, Members, Leaderboard, Challenges). Feed shows rucks from community members. Members tab with creator badge and kick functionality for community creator. Leaderboard ranks community members by distance. Challenges tab shows real challenges with join/leave.
+- **Challenge Creation:** POST `/api/communities/:id/challenges` (creator-only), type picker (distance/weight/rucks), goal value + unit, duration presets (1wk/2wk/1mo/2mo), content moderation
+- **Member Management:** Creator can remove members via DELETE `/api/communities/:id/members/:userId` with auth check
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 
 ## Key Dependencies

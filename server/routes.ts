@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, type User } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, createChallengeSchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 import { moderateText } from "./moderation";
@@ -438,6 +438,180 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(stats);
     } catch (error) {
       console.error("Get ruck stats error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities/:id", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const community = await storage.getCommunity(req.params.id);
+      if (!community) {
+        return res.status(404).json({ message: "Community not found" });
+      }
+      let creatorName: string | null = null;
+      if (community.createdBy) {
+        const creator = await storage.getUser(community.createdBy);
+        creatorName = creator?.name || creator?.username || null;
+      }
+      return res.json({ ...community, creatorName });
+    } catch (error) {
+      console.error("Get community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities/:id/members", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const members = await storage.getCommunityMembers(req.params.id);
+      return res.json(members);
+    } catch (error) {
+      console.error("Get community members error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/communities/:id/members/:userId", authMiddleware, async (req: Request<{ id: string; userId: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const community = await storage.getCommunity(req.params.id);
+      if (!community) {
+        return res.status(404).json({ message: "Community not found" });
+      }
+      if (community.createdBy !== authUser.id) {
+        return res.status(403).json({ message: "Only the community creator can remove members" });
+      }
+      if (req.params.userId === authUser.id) {
+        return res.status(400).json({ message: "Cannot remove yourself" });
+      }
+      await storage.kickMember(req.params.id, req.params.userId);
+      return res.json({ message: "Member removed" });
+    } catch (error) {
+      console.error("Kick member error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities/:id/feed", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const feed = await storage.getCommunityFeed(req.params.id);
+      return res.json(feed);
+    } catch (error) {
+      console.error("Community feed error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities/:id/leaderboard", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const leaderboard = await storage.getCommunityLeaderboard(req.params.id);
+      return res.json(leaderboard);
+    } catch (error) {
+      console.error("Community leaderboard error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/communities/:id/challenges", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const result = createChallengeSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const community = await storage.getCommunity(req.params.id);
+      if (!community) {
+        return res.status(404).json({ message: "Community not found" });
+      }
+      if (community.createdBy !== authUser.id) {
+        return res.status(403).json({ message: "Only the community creator can create challenges" });
+      }
+
+      const titleCheck = moderateText(result.data.title);
+      if (!titleCheck.ok) {
+        return res.status(400).json({ message: titleCheck.message });
+      }
+      const descCheck = moderateText(result.data.description);
+      if (!descCheck.ok) {
+        return res.status(400).json({ message: descCheck.message });
+      }
+
+      const challenge = await storage.createChallenge({
+        communityId: req.params.id,
+        title: result.data.title,
+        description: result.data.description,
+        challengeType: result.data.challengeType,
+        goalValue: result.data.goalValue,
+        goalUnit: result.data.goalUnit,
+        endDate: result.data.endDate,
+        createdBy: authUser.id,
+      });
+
+      return res.status(201).json(challenge);
+    } catch (error) {
+      console.error("Create challenge error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/communities/:id/challenges", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const challengeList = await storage.getCommunityChall(req.params.id);
+
+      let userJoinedIds = new Set<string>();
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const authToken = authHeader.slice(7);
+        const authUser = await storage.getSessionUser(authToken);
+        if (authUser) {
+          userJoinedIds = await storage.getUserChallengeIds(
+            authUser.id,
+            challengeList.map(ch => ch.id),
+          );
+        }
+      }
+
+      const enriched = await Promise.all(challengeList.map(async (ch) => {
+        const participantCount = await storage.getChallengeParticipantCount(ch.id);
+        return { ...ch, participantCount, isJoined: userJoinedIds.has(ch.id) };
+      }));
+      return res.json(enriched);
+    } catch (error) {
+      console.error("Get challenges error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/challenges/:id/join", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const challenge = await storage.getChallenge(req.params.id);
+      if (!challenge) {
+        return res.status(404).json({ message: "Challenge not found" });
+      }
+      const userComms = await storage.getUserCommunities(authUser.id);
+      if (!userComms.some(c => c.id === challenge.communityId)) {
+        return res.status(403).json({ message: "You must be a community member to join this challenge" });
+      }
+      await storage.joinChallenge(authUser.id, req.params.id);
+      return res.json({ message: "Joined challenge" });
+    } catch (error) {
+      console.error("Join challenge error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/challenges/:id/leave", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const challenge = await storage.getChallenge(req.params.id);
+      if (!challenge) {
+        return res.status(404).json({ message: "Challenge not found" });
+      }
+      await storage.leaveChallenge(authUser.id, req.params.id);
+      return res.json({ message: "Left challenge" });
+    } catch (error) {
+      console.error("Leave challenge error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

@@ -59,6 +59,31 @@ export const rucks = pgTable("rucks", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const challenges = pgTable("challenges", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  challengeType: text("challenge_type").notNull(),
+  goalValue: integer("goal_value").notNull(),
+  goalUnit: text("goal_unit").notNull(),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date").notNull(),
+  createdBy: varchar("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const challengeParticipants = pgTable("challenge_participants", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  challengeId: varchar("challenge_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  joinedAt: timestamp("joined_at").defaultNow(),
+});
+
 export const insertRuckSchema = z.object({
   distance: z.number().positive(),
   durationSeconds: z.number().int().nonnegative().optional(),
@@ -111,7 +136,18 @@ export const createCommunitySchema = z.object({
   location: z.string().min(1, "Location is required").max(100),
 });
 
+export const createChallengeSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters").max(100, "Title must be under 100 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters").max(500, "Description must be under 500 characters"),
+  challengeType: z.enum(["distance", "weight", "rucks"]),
+  goalValue: z.number().int().positive("Goal must be a positive number"),
+  goalUnit: z.string().min(1),
+  endDate: z.string().min(1, "End date is required"),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
 export type UserCommunity = typeof userCommunities.$inferSelect;
+export type Challenge = typeof challenges.$inferSelect;
+export type ChallengeParticipant = typeof challengeParticipants.$inferSelect;

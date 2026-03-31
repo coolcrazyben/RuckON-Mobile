@@ -1,7 +1,7 @@
-import type { User, InsertUser, Community, UserCommunity, Ruck } from "@shared/schema";
-import { users, communities, userCommunities, rucks } from "@shared/schema";
+import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant } from "@shared/schema";
+import { users, communities, userCommunities, rucks, challenges, challengeParticipants } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, sql, desc } from "drizzle-orm";
+import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -381,6 +381,169 @@ export class DatabaseStorage implements IStorage {
       totalDistance: Number(r.totalDistance),
       totalWeight: Number(r.totalWeight),
     }));
+  }
+
+  async getCommunityMembers(communityId: string): Promise<Array<{ id: string; name: string | null; username: string; avatar: string | null; location: string | null; joinedAt: Date | null; role: string }>> {
+    const community = await this.getCommunity(communityId);
+    if (!community) return [];
+
+    const memberships = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        avatar: users.avatar,
+        location: users.location,
+        joinedAt: userCommunities.joinedAt,
+      })
+      .from(userCommunities)
+      .innerJoin(users, eq(userCommunities.userId, users.id))
+      .where(eq(userCommunities.communityId, communityId));
+
+    return memberships.map(m => ({
+      ...m,
+      role: m.id === community.createdBy ? 'creator' : 'member',
+    }));
+  }
+
+  async kickMember(communityId: string, userId: string): Promise<void> {
+    const deleted = await db.delete(userCommunities).where(
+      and(
+        eq(userCommunities.userId, userId),
+        eq(userCommunities.communityId, communityId),
+      ),
+    ).returning();
+    if (deleted.length > 0) {
+      await db.update(communities)
+        .set({ memberCount: sql`GREATEST(COALESCE(${communities.memberCount}, 0) - 1, 0)` })
+        .where(eq(communities.id, communityId));
+    }
+  }
+
+  async getCommunityFeed(communityId: string): Promise<Array<Ruck & { userName: string | null; userAvatar: string | null }>> {
+    const memberIds = await db
+      .select({ userId: userCommunities.userId })
+      .from(userCommunities)
+      .where(eq(userCommunities.communityId, communityId));
+
+    if (memberIds.length === 0) return [];
+
+    const ids = memberIds.map(m => m.userId);
+    return db
+      .select({
+        id: rucks.id,
+        userId: rucks.userId,
+        distance: rucks.distance,
+        durationSeconds: rucks.durationSeconds,
+        weight: rucks.weight,
+        notes: rucks.notes,
+        routeCoordinates: rucks.routeCoordinates,
+        routeImageUrl: rucks.routeImageUrl,
+        createdAt: rucks.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(rucks)
+      .leftJoin(users, eq(rucks.userId, users.id))
+      .where(inArray(rucks.userId, ids))
+      .orderBy(desc(rucks.createdAt))
+      .limit(50);
+  }
+
+  async getCommunityLeaderboard(communityId: string): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>> {
+    const memberIds = await db
+      .select({ userId: userCommunities.userId })
+      .from(userCommunities)
+      .where(eq(userCommunities.communityId, communityId));
+
+    if (memberIds.length === 0) return [];
+
+    const ids = memberIds.map(m => m.userId);
+    const results = await db
+      .select({
+        userId: users.id,
+        name: users.name,
+        username: users.username,
+        avatar: users.avatar,
+        totalDistance: sql<number>`COALESCE(SUM(${rucks.distance}), 0)`.as('total_distance'),
+        totalWeight: sql<number>`COALESCE(SUM(COALESCE(${rucks.weight}, 0) * COALESCE(${rucks.distance}, 0) / 100), 0)`.as('total_weight'),
+      })
+      .from(users)
+      .leftJoin(rucks, eq(rucks.userId, users.id))
+      .where(inArray(users.id, ids))
+      .groupBy(users.id, users.name, users.username, users.avatar)
+      .orderBy(desc(sql`COALESCE(SUM(${rucks.distance}), 0)`))
+      .limit(50);
+
+    return results.map(r => ({
+      ...r,
+      totalDistance: Number(r.totalDistance),
+      totalWeight: Number(r.totalWeight),
+    }));
+  }
+
+  async createChallenge(data: { communityId: string; title: string; description: string; challengeType: string; goalValue: number; goalUnit: string; endDate: string; createdBy: string }): Promise<Challenge> {
+    const [challenge] = await db.insert(challenges).values({
+      communityId: data.communityId,
+      title: data.title,
+      description: data.description,
+      challengeType: data.challengeType,
+      goalValue: data.goalValue,
+      goalUnit: data.goalUnit,
+      endDate: new Date(data.endDate),
+      createdBy: data.createdBy,
+    }).returning();
+    return challenge;
+  }
+
+  async getCommunityChall(communityId: string): Promise<Challenge[]> {
+    return db.select().from(challenges)
+      .where(eq(challenges.communityId, communityId))
+      .orderBy(desc(challenges.createdAt));
+  }
+
+  async joinChallenge(userId: string, challengeId: string): Promise<void> {
+    const existing = await db.select().from(challengeParticipants).where(
+      and(
+        eq(challengeParticipants.userId, userId),
+        eq(challengeParticipants.challengeId, challengeId),
+      ),
+    );
+    if (existing.length > 0) return;
+    await db.insert(challengeParticipants).values({ userId, challengeId });
+  }
+
+  async leaveChallenge(userId: string, challengeId: string): Promise<void> {
+    await db.delete(challengeParticipants).where(
+      and(
+        eq(challengeParticipants.userId, userId),
+        eq(challengeParticipants.challengeId, challengeId),
+      ),
+    );
+  }
+
+  async getChallengeParticipantCount(challengeId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(challengeParticipants)
+      .where(eq(challengeParticipants.challengeId, challengeId));
+    return Number(result[0]?.count || 0);
+  }
+
+  async getUserChallengeIds(userId: string, challengeIds: string[]): Promise<Set<string>> {
+    if (challengeIds.length === 0) return new Set();
+    const joined = await db.select({ challengeId: challengeParticipants.challengeId })
+      .from(challengeParticipants)
+      .where(and(
+        eq(challengeParticipants.userId, userId),
+        inArray(challengeParticipants.challengeId, challengeIds),
+      ));
+    return new Set(joined.map(j => j.challengeId));
+  }
+
+  async getChallenge(id: string): Promise<Challenge | undefined> {
+    const [challenge] = await db.select().from(challenges).where(eq(challenges.id, id));
+    return challenge;
   }
 }
 
