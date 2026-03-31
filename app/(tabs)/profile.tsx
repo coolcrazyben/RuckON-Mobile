@@ -104,7 +104,11 @@ function RuckHistoryItem({ ruck }: { ruck: RuckData }) {
   const dateLabel = ruck.createdAt ? timeAgo(ruck.createdAt) : '';
 
   return (
-    <View style={styles.historyItem}>
+    <TouchableOpacity
+      style={styles.historyItem}
+      activeOpacity={0.7}
+      onPress={() => router.push({ pathname: '/ruck/[id]', params: { id: ruck.id } })}
+    >
       <View style={styles.historyLeft}>
         <View style={styles.historyIconWrap}>
           <Ionicons name="walk" size={18} color={Colors.burntOrange} />
@@ -117,8 +121,9 @@ function RuckHistoryItem({ ruck }: { ruck: RuckData }) {
       <View style={styles.historyRight}>
         <Text style={styles.historyPace}>{pace}</Text>
         <Text style={styles.historyPaceLabel}>min/mi</Text>
+        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} style={{ marginTop: 2 }} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

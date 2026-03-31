@@ -102,12 +102,12 @@ shared/
 
 - **Auth:** Email/password + Google/Apple sign-in, session management
 - **Onboarding:** Gender, weight, location collection → optional community joining
-- **Feed:** Real ruck feed from API (`/api/rucks/feed`), pull-to-refresh, ruck cards with user avatar/name/stats
+- **Feed:** Real ruck feed from API (`/api/rucks/feed`), pull-to-refresh, ruck cards with user avatar/name/stats, route map preview on cards with GPS data (using RuckMap component)
 - **Explore:** Search with debounce, category filters (General/Events/Local/Training/Military/Challenges/Gear/Social), nearby communities section ranked by user location, community creation with content moderation, join/leave with real membership state
 - **Community Creation:** POST `/api/communities` with auth + content moderation (word-boundary matching with leetspeak detection), Zod validation, atomic DB transaction for community + creator membership
 - **Log Ruck:** Manual entry (distance, duration, weight, notes) + GPS tracking; full-screen map mode when tracking active with floating stats panel (distance/time/pace in large Oswald font) and red STOP button
 - **Leaderboard:** Global/Friends/Community scopes, Weekly/Monthly periods, Distance/Weight metrics, podium for top 3
-- **Profile:** Real user data, live ruck stats, ruck history, real communities from API, profile picture upload via expo-image-picker (base64 data URI stored in DB), settings link, logout with confirmation dialog
+- **Profile:** Real user data, live ruck stats, tappable ruck history (navigates to ruck detail), real communities from API, profile picture upload via expo-image-picker (base64 data URI stored in DB), settings link, logout with confirmation dialog
 - **Settings:** Edit name, username (lowercase, unique), bio, location, weight via PATCH `/api/user/profile`; accessible from profile via settings icon
 - **Community Detail:** Consolidated single-endpoint loading (GET `/api/communities/:id/detail` returns community+joined+feed+challenges). 4 tabs (Feed, Members, Leaderboard, Challenges). Feed shows rucks + challenge announcements from community members with active challenges pinned at top. Members/Leaderboard lazy-loaded only when tab is tapped. Creator sees edit button. Members tab with creator badge and kick functionality.
 - **Community Editing:** PUT `/api/communities/:id` (creator-only) — edit name, description, category, location, cover image. Content moderation on name/description. Edit screen at `app/edit-community.tsx` with image picker for cover photo.

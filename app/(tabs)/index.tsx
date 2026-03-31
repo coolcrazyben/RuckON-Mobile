@@ -16,6 +16,7 @@ import Colors from '@/constants/colors';
 import { useFocusEffect, router } from 'expo-router';
 import { getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth';
+import RuckMap from '@/components/RuckMap';
 
 interface FeedRuck {
   id: string;
@@ -24,6 +25,7 @@ interface FeedRuck {
   durationSeconds: number | null;
   weight: number | null;
   notes: string | null;
+  routeCoordinates: string | null;
   routeImageUrl: string | null;
   createdAt: string | null;
   userName: string | null;
@@ -67,6 +69,15 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
   const pace = ruck.durationSeconds ? formatPace(ruck.distance || 0, ruck.durationSeconds) : '--';
   const duration = ruck.durationSeconds ? formatDuration(ruck.durationSeconds) : '--';
   const dateLabel = ruck.createdAt ? timeAgo(ruck.createdAt) : '';
+
+  let routeCoords: Array<{ latitude: number; longitude: number }> = [];
+  if (ruck.routeCoordinates) {
+    try {
+      routeCoords = JSON.parse(ruck.routeCoordinates);
+    } catch {}
+  }
+  const hasRoute = routeCoords.length >= 2;
+  const lastCoord = hasRoute ? routeCoords[routeCoords.length - 1] : null;
 
   return (
     <TouchableOpacity
@@ -117,6 +128,15 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
           <Text style={styles.statLabel}>min/mi</Text>
         </View>
       </View>
+
+      {hasRoute && lastCoord ? (
+        <View style={styles.mapPreview} pointerEvents="none">
+          <RuckMap
+            currentPos={lastCoord}
+            routeCoords={routeCoords}
+          />
+        </View>
+      ) : null}
 
       {ruck.notes ? (
         <Text style={styles.notes} numberOfLines={2}>{ruck.notes}</Text>
@@ -325,6 +345,13 @@ const styles = StyleSheet.create({
     width: 1,
     height: 30,
     backgroundColor: Colors.cardBorder,
+  },
+  mapPreview: {
+    height: 160,
+    marginHorizontal: 14,
+    marginBottom: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   notes: {
     fontFamily: 'Inter_400Regular',
