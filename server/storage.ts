@@ -61,6 +61,16 @@ export interface IStorage {
   getLeaderboard(period: 'weekly' | 'monthly', metric: 'distance' | 'weight'): Promise<Array<{ userId: string; name: string | null; username: string; avatar: string | null; totalDistance: number; totalWeight: number }>>;
   createCommunity(data: { name: string; description: string; category: string; location: string; createdBy: string }): Promise<Community>;
   getCommunity(id: string): Promise<Community | undefined>;
+  getRuckDetail(ruckId: string, requestingUserId?: string): Promise<{
+    ruck: Ruck & { userName: string | null; userAvatar: string | null };
+    likeCount: number;
+    commentCount: number;
+    liked: boolean;
+  } | null>;
+  toggleRuckLike(ruckId: string, userId: string): Promise<{ liked: boolean; likeCount: number }>;
+  getRuckComments(ruckId: string): Promise<Array<{ id: string; userId: string; content: string; createdAt: Date | null; userName: string | null; userAvatar: string | null }>>;
+  addRuckComment(ruckId: string, userId: string, content: string): Promise<{ id: string; userId: string; content: string; createdAt: Date | null; userName: string | null; userAvatar: string | null }>;
+  getRuckLikeAndCommentCounts(ruckIds: string[]): Promise<Map<string, { likeCount: number; commentCount: number }>>;
 }
 
 const sessions = new Map<string, string>();
