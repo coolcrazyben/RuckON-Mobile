@@ -223,6 +223,7 @@ export default function CommunityDetailScreen() {
 
   const [challengeList, setChallengeList] = useState<ChallengeData[]>([]);
   const [joinedChallengeIds, setJoinedChallengeIds] = useState<Set<string>>(new Set());
+  const [friendStatuses, setFriendStatuses] = useState<Record<string, { status: string; friendshipId?: string; direction?: string }>>({});
 
   const baseUrl = (() => {
     try { return getApiUrl(); } catch { return null; }
@@ -261,11 +262,27 @@ export default function CommunityDetailScreen() {
     setMembersLoading(true);
     try {
       const res = await fetch(`${baseUrl}api/communities/${id}/members`);
-      if (res.ok) setMembers(await res.json());
+      if (res.ok) {
+        const memberData = await res.json();
+        setMembers(memberData);
+        if (token && user) {
+          const statuses: Record<string, { status: string; friendshipId?: string; direction?: string }> = {};
+          const otherMembers = memberData.filter((m: MemberData) => m.id !== user.id);
+          await Promise.all(otherMembers.map(async (m: MemberData) => {
+            try {
+              const statusRes = await fetch(`${baseUrl}api/friends/status/${m.id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (statusRes.ok) statuses[m.id] = await statusRes.json();
+            } catch {}
+          }));
+          setFriendStatuses(statuses);
+        }
+      }
     } catch {}
     setMembersLoading(false);
     setMembersLoaded(true);
-  }, [baseUrl, id]);
+  }, [baseUrl, id, token, user]);
 
   const fetchLeaderboard = useCallback(async () => {
     if (!baseUrl || !id) return;
@@ -335,6 +352,34 @@ export default function CommunityDetailScreen() {
         },
       ],
     );
+  };
+
+  const handleSendFriendRequest = async (memberId: string) => {
+    if (!baseUrl || !token) return;
+    try {
+      const res = await fetch(`${baseUrl}api/friends/request`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresseeId: memberId }),
+      });
+      if (res.ok) {
+        setFriendStatuses(prev => ({ ...prev, [memberId]: { status: 'pending', direction: 'sent' } }));
+      }
+    } catch {}
+  };
+
+  const handleAcceptFriendFromList = async (memberId: string) => {
+    const fs = friendStatuses[memberId];
+    if (!baseUrl || !token || !fs?.friendshipId) return;
+    try {
+      const res = await fetch(`${baseUrl}api/friends/${fs.friendshipId}/accept`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setFriendStatuses(prev => ({ ...prev, [memberId]: { status: 'accepted' } }));
+      }
+    } catch {}
   };
 
   const toggleChallengeJoin = async (challengeId: string) => {
@@ -531,9 +576,38 @@ export default function CommunityDetailScreen() {
                       <Text style={styles.memberMeta}>@{member.username}</Text>
                     </View>
                   </TouchableOpacity>
-                  {member.location && (
-                    <Text style={styles.memberLocation}>{member.location}</Text>
-                  )}
+                  {member.id !== user?.id && token && (() => {
+                    const fs = friendStatuses[member.id];
+                    if (!fs || fs.status === 'none') {
+                      return (
+                        <TouchableOpacity style={styles.memberFriendBtn} onPress={() => handleSendFriendRequest(member.id)}>
+                          <Ionicons name="person-add-outline" size={14} color={Colors.burntOrange} />
+                        </TouchableOpacity>
+                      );
+                    }
+                    if (fs.status === 'pending' && fs.direction === 'received') {
+                      return (
+                        <TouchableOpacity style={[styles.memberFriendBtn, styles.memberFriendBtnAccept]} onPress={() => handleAcceptFriendFromList(member.id)}>
+                          <Ionicons name="checkmark" size={14} color={Colors.bone} />
+                        </TouchableOpacity>
+                      );
+                    }
+                    if (fs.status === 'pending') {
+                      return (
+                        <View style={[styles.memberFriendBtn, styles.memberFriendBtnPending]}>
+                          <Ionicons name="time-outline" size={14} color={Colors.textMuted} />
+                        </View>
+                      );
+                    }
+                    if (fs.status === 'accepted') {
+                      return (
+                        <View style={[styles.memberFriendBtn, styles.memberFriendBtnFriend]}>
+                          <Ionicons name="people" size={14} color={Colors.mossGreen} />
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
                   {isCreator && member.role !== 'creator' && (
                     <TouchableOpacity
                       style={styles.kickBtn}
@@ -1005,6 +1079,26 @@ const styles = StyleSheet.create({
   },
   kickBtn: {
     padding: 6,
+  },
+  memberFriendBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: Colors.burntOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  memberFriendBtnAccept: {
+    backgroundColor: Colors.burntOrange,
+    borderColor: Colors.burntOrange,
+  },
+  memberFriendBtnPending: {
+    borderColor: Colors.cardBorder,
+  },
+  memberFriendBtnFriend: {
+    borderColor: Colors.mossGreen,
   },
   subTitle: {
     fontFamily: 'Oswald_600SemiBold',

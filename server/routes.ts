@@ -431,7 +431,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const friendIds = await storage.getFriendIds(authUser.id);
           if (friendIds.length > 0) {
             const friendFeed = await storage.getFriendsFeed(authUser.id, 50);
-            return res.json(friendFeed);
+            if (friendFeed.length > 0) {
+              return res.json(friendFeed);
+            }
           }
         }
       }

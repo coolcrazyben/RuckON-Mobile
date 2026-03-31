@@ -118,6 +118,21 @@ export default function UserProfileScreen() {
     setActionLoading(false);
   };
 
+  const handleDecline = async () => {
+    if (!baseUrl || !token || !friendStatus.friendshipId || actionLoading) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${baseUrl}api/friends/${friendStatus.friendshipId}/decline`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setFriendStatus({ status: 'none' });
+      }
+    } catch {}
+    setActionLoading(false);
+  };
+
   const handleUnfriend = () => {
     Alert.alert(
       'Remove Friend',
@@ -168,10 +183,16 @@ export default function UserProfileScreen() {
     if (friendStatus.status === 'pending') {
       if (friendStatus.direction === 'received') {
         return (
-          <TouchableOpacity style={styles.friendBtn} onPress={handleAcceptRequest}>
-            <Ionicons name="checkmark" size={16} color={Colors.bone} />
-            <Text style={styles.friendBtnText}>Accept</Text>
-          </TouchableOpacity>
+          <View style={styles.actionButtonRow}>
+            <TouchableOpacity style={styles.friendBtn} onPress={handleAcceptRequest}>
+              <Ionicons name="checkmark" size={16} color={Colors.bone} />
+              <Text style={styles.friendBtnText}>Accept</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.friendBtn, styles.friendBtnDecline]} onPress={handleDecline}>
+              <Ionicons name="close" size={16} color={Colors.textMuted} />
+              <Text style={[styles.friendBtnText, { color: Colors.textMuted }]}>Decline</Text>
+            </TouchableOpacity>
+          </View>
         );
       }
       return (
@@ -351,6 +372,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.darkCard,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
+  },
+  friendBtnDecline: {
+    backgroundColor: Colors.darkCard,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  actionButtonRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   friendBtnText: {
     fontFamily: 'Inter_600SemiBold',
