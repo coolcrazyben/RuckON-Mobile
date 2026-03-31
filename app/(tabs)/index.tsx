@@ -74,10 +74,14 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
       activeOpacity={0.8}
       onPress={() => router.push({ pathname: '/ruck/[id]', params: { id: ruck.id } })}
     >
-      <TouchableOpacity
-        style={styles.cardHeader}
-        onPress={() => router.push({ pathname: '/user-profile', params: { userId: ruck.userId } })}
-      >
+      <View style={styles.cardHeader}>
+        <TouchableOpacity
+          onPress={(e) => {
+            e.stopPropagation();
+            router.push({ pathname: '/user-profile', params: { userId: ruck.userId } });
+          }}
+          style={styles.cardHeaderInner}
+        >
         {ruck.userAvatar ? (
           <Image source={{ uri: ruck.userAvatar }} style={styles.avatar} />
         ) : (
@@ -89,7 +93,8 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
           <Text style={styles.userName}>{ruck.userName || 'Rucker'}</Text>
           <Text style={styles.cardDate}>{dateLabel}</Text>
         </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
@@ -248,9 +253,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
   },
   cardHeader: {
+    padding: 14,
+  },
+  cardHeaderInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
     gap: 10,
   },
   avatar: {
