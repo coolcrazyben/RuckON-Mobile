@@ -23,7 +23,7 @@ interface NotificationItem {
   referenceId: string | null;
   fromUserId: string | null;
   message: string;
-  read: boolean;
+  read: boolean | null;
   createdAt: string | null;
   fromUserName: string | null;
   fromUserAvatar: string | null;

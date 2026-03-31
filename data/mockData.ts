@@ -63,13 +63,6 @@ export interface LeaderboardEntry {
   isCurrentUser: boolean;
 }
 
-export interface Achievement {
-  id: string;
-  title: string;
-  icon: string;
-  earned: boolean;
-  description: string;
-}
 
 export const MOCK_USERS: User[] = [
   {
@@ -536,16 +529,6 @@ export const MOCK_LEADERBOARD: LeaderboardEntry[] = [
   },
 ];
 
-export const MOCK_ACHIEVEMENTS: Achievement[] = [
-  { id: 'a1', title: 'First Ruck', icon: 'footsteps', earned: true, description: 'Complete your first ruck' },
-  { id: 'a2', title: '10 Miles', icon: 'map', earned: true, description: 'Log 10 total miles' },
-  { id: 'a3', title: '50 Miles', icon: 'ribbon', earned: true, description: 'Log 50 total miles' },
-  { id: 'a4', title: '100 Miles', icon: 'trophy', earned: true, description: 'Log 100 total miles' },
-  { id: 'a5', title: 'Iron Rucker', icon: 'fitness', earned: true, description: 'Carry 50lbs for 5+ miles' },
-  { id: 'a6', title: '500 Miles', icon: 'star', earned: false, description: 'Log 500 total miles' },
-  { id: 'a7', title: 'Pack Leader', icon: 'people', earned: false, description: 'Join 3 communities' },
-  { id: 'a8', title: 'Dawn Patrol', icon: 'sunny', earned: false, description: 'Ruck before 6am five times' },
-];
 
 export const COMMUNITY_FEED: Ruck[] = MOCK_RUCKS.slice(0, 4);
 

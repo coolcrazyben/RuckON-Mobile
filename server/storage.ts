@@ -72,7 +72,7 @@ export interface IStorage {
   addRuckComment(ruckId: string, userId: string, content: string): Promise<{ id: string; userId: string; content: string; createdAt: Date | null; userName: string | null; userAvatar: string | null }>;
   getRuckLikeAndCommentCounts(ruckIds: string[]): Promise<Map<string, { likeCount: number; commentCount: number }>>;
   createNotification(data: { userId: string; type: string; referenceId?: string; fromUserId?: string; message: string }): Promise<void>;
-  getNotifications(userId: string): Promise<Array<{ id: string; userId: string; type: string; referenceId: string | null; fromUserId: string | null; message: string; read: boolean; createdAt: string | null; fromUserName: string | null; fromUserAvatar: string | null }>>;
+  getNotifications(userId: string): Promise<Array<Notification & { fromUserName: string | null; fromUserAvatar: string | null }>>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   markNotificationsRead(userId: string): Promise<void>;
   getUserAchievements(userId: string): Promise<Array<{ id: string; title: string; icon: string; earned: boolean; description: string }>>;

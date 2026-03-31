@@ -442,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rucks/:id/share", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
     try {
-      const user = (req as AuthenticatedRequest).authUser;
+      const user = (req as unknown as AuthenticatedRequest).authUser;
       const ruck = await storage.getRuck(req.params.id);
       if (!ruck) return res.status(404).json({ message: "Ruck not found" });
       if (ruck.userId !== user.id) return res.status(403).json({ message: "Not your ruck" });
