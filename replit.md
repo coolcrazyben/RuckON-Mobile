@@ -63,9 +63,11 @@ app/
   create-community.tsx # Community creation (name, description, category, location)
   create-challenge.tsx # Challenge creation (title, description, type, goal, duration)
   edit-community.tsx   # Edit community (name, description, category, location, cover image)
+  friends.tsx          # Friends list + pending requests screen (accept/decline/unfriend)
+  user-profile.tsx     # Other user's profile (stats, friend count, add/remove friend)
   (tabs)/
     _layout.tsx        # 5-tab navigator (NativeTabs for iOS26+, classic Tabs fallback)
-    index.tsx          # Feed screen (real ruck data from API, pull-to-refresh)
+    index.tsx          # Feed screen (friends-based or global, pull-to-refresh)
     explore.tsx        # Explore screen (search, category filters, nearby communities, create)
     log.tsx            # Log Ruck screen (manual entry + GPS tracking with live map)
     leaderboard.tsx    # Leaderboard (global/friends/community, weekly/monthly)
@@ -93,7 +95,7 @@ server/
   storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
   moderation.ts        # Content moderation (word-boundary profanity filter with leetspeak detection)
 shared/
-  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts) + Zod validators
+  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships) + Zod validators
 ```
 
 ## Features
@@ -112,6 +114,9 @@ shared/
 - **Challenge Creation:** POST `/api/communities/:id/challenges` (creator-only), auto-creates announcement in community feed. Type picker (distance/weight/rucks), goal value + unit, duration presets (1wk/2wk/1mo/2mo), content moderation.
 - **Community Posts:** `community_posts` table for announcements (challenge_announcement type). Feed merges rucks + posts sorted by date.
 - **Member Management:** Creator can remove members via DELETE `/api/communities/:id/members/:userId` with auth check
+- **Friends System:** Send/accept/decline friend requests, unfriend. Friend count visible on profiles. Friends list + pending requests screen accessible from profile. Tappable member names in communities navigate to user profiles with friend actions.
+- **Friends Feed:** Main feed shows rucks from friends + self when user has friends, falls back to global recent rucks otherwise. Auth token passed to feed endpoint.
+- **User Profiles:** GET `/api/users/:id/profile` returns public profile with friend count and ruck stats. Dedicated user-profile screen with Add Friend/Pending/Friends/Accept button based on relationship state.
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 
 ## Key Dependencies

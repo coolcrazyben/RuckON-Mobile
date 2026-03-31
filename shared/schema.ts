@@ -96,6 +96,19 @@ export const communityPosts = pgTable("community_posts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const friendships = pgTable("friendships", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  requesterId: varchar("requester_id").notNull(),
+  addresseeId: varchar("addressee_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type Friendship = typeof friendships.$inferSelect;
+
 export const insertRuckSchema = z.object({
   distance: z.number().positive(),
   durationSeconds: z.number().int().nonnegative().optional(),

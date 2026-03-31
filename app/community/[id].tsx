@@ -504,24 +504,33 @@ export default function CommunityDetailScreen() {
             ) : (
               members.map((member) => (
                 <View key={member.id} style={styles.memberRow}>
-                  {member.avatar ? (
-                    <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
-                  ) : (
-                    <View style={[styles.memberAvatar, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
-                      <Ionicons name="person" size={18} color={Colors.bone} />
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                    onPress={() => {
+                      if (member.id !== user?.id) {
+                        router.push({ pathname: '/user-profile', params: { userId: member.id } });
+                      }
+                    }}
+                  >
+                    {member.avatar ? (
+                      <Image source={{ uri: member.avatar }} style={styles.memberAvatar} />
+                    ) : (
+                      <View style={[styles.memberAvatar, { backgroundColor: Colors.forestGreen, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="person" size={18} color={Colors.bone} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.memberName}>{member.name || member.username}</Text>
+                        {member.role === 'creator' && (
+                          <View style={styles.creatorBadge}>
+                            <Text style={styles.creatorBadgeText}>Creator</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.memberMeta}>@{member.username}</Text>
                     </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.memberName}>{member.name || member.username}</Text>
-                      {member.role === 'creator' && (
-                        <View style={styles.creatorBadge}>
-                          <Text style={styles.creatorBadgeText}>Creator</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.memberMeta}>@{member.username}</Text>
-                  </View>
+                  </TouchableOpacity>
                   {member.location && (
                     <Text style={styles.memberLocation}>{member.location}</Text>
                   )}

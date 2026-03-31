@@ -423,6 +423,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/rucks/feed", async (req: Request, res: Response) => {
     try {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const authToken = authHeader.slice(7);
+        const authUser = await storage.getSessionUser(authToken);
+        if (authUser) {
+          const friendIds = await storage.getFriendIds(authUser.id);
+          if (friendIds.length > 0) {
+            const friendFeed = await storage.getFriendsFeed(authUser.id, 50);
+            return res.json(friendFeed);
+          }
+        }
+      }
       const feedRucks = await storage.getRecentRucks(50);
       return res.json(feedRucks);
     } catch (error) {
@@ -669,6 +681,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ message: "Left challenge" });
     } catch (error) {
       console.error("Leave challenge error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/friends/request", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const authUser = (req as AuthenticatedRequest).authUser;
+      const { addresseeId } = req.body;
+      if (!addresseeId || typeof addresseeId !== 'string') {
+        return res.status(400).json({ message: "addresseeId is required" });
+      }
+      if (addresseeId === authUser.id) {
+        return res.status(400).json({ message: "Cannot send friend request to yourself" });
+      }
+      const addressee = await storage.getUser(addresseeId);
+      if (!addressee) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const friendship = await storage.sendFriendRequest(authUser.id, addresseeId);
+      return res.status(201).json(friendship);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Internal server error";
+      if (message === 'Already friends' || message === 'Friend request already pending') {
+        return res.status(409).json({ message });
+      }
+      console.error("Friend request error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/friends/:id/accept", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const friendship = await storage.acceptFriendRequest(req.params.id, authUser.id);
+      return res.json(friendship);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Internal server error";
+      if (message === 'Not authorized' || message === 'Request is not pending') {
+        return res.status(400).json({ message });
+      }
+      if (message === 'Friend request not found') {
+        return res.status(404).json({ message });
+      }
+      console.error("Accept friend error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/friends/:id/decline", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      await storage.declineFriendRequest(req.params.id, authUser.id);
+      return res.json({ message: "Friend request declined" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Internal server error";
+      if (message === 'Not authorized') {
+        return res.status(400).json({ message });
+      }
+      if (message === 'Friend request not found') {
+        return res.status(404).json({ message });
+      }
+      console.error("Decline friend error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/friends/:userId", authMiddleware, async (req: Request<{ userId: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      await storage.unfriend(authUser.id, req.params.userId);
+      return res.json({ message: "Unfriended" });
+    } catch (error) {
+      console.error("Unfriend error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/friends", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const authUser = (req as AuthenticatedRequest).authUser;
+      const friends = await storage.getFriends(authUser.id);
+      return res.json(friends);
+    } catch (error) {
+      console.error("Get friends error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/friends/pending", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const authUser = (req as AuthenticatedRequest).authUser;
+      const pending = await storage.getPendingFriendRequests(authUser.id);
+      return res.json(pending);
+    } catch (error) {
+      console.error("Get pending friends error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/friends/status/:userId", authMiddleware, async (req: Request<{ userId: string }>, res: Response) => {
+    try {
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const status = await storage.getFriendshipStatus(authUser.id, req.params.userId);
+      return res.json(status || { status: 'none' });
+    } catch (error) {
+      console.error("Friendship status error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/users/:id/profile", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const userProfile = await storage.getUser(req.params.id);
+      if (!userProfile) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const friendCount = await storage.getFriendCount(req.params.id);
+      const ruckStats = await storage.getUserRuckStats(req.params.id);
+      return res.json({
+        id: userProfile.id,
+        username: userProfile.username,
+        name: userProfile.name,
+        avatar: userProfile.avatar,
+        bio: userProfile.bio,
+        location: userProfile.location,
+        createdAt: userProfile.createdAt,
+        friendCount,
+        ruckStats,
+      });
+    } catch (error) {
+      console.error("Get user profile error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

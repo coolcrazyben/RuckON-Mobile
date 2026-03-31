@@ -123,6 +123,8 @@ export default function ProfileScreen() {
   const [rucks, setRucks] = useState<RuckData[]>([]);
   const [stats, setStats] = useState<RuckStats>({ totalMiles: 0, totalRucks: 0, weightMoved: 0 });
   const [communities, setCommunities] = useState<CommunityData[]>([]);
+  const [friendCount, setFriendCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const baseUrl = (() => {
@@ -141,10 +143,14 @@ export default function ProfileScreen() {
         fetch(`${baseUrl}api/rucks`, { headers }).then(r => r.ok ? r.json() : []),
         fetch(`${baseUrl}api/rucks/stats`, { headers }).then(r => r.ok ? r.json() : { totalMiles: 0, totalRucks: 0, weightMoved: 0 }),
         fetch(`${baseUrl}api/user/communities`, { headers }).then(r => r.ok ? r.json() : []),
-      ]).then(([rucksData, statsData, commData]) => {
+        fetch(`${baseUrl}api/friends`, { headers }).then(r => r.ok ? r.json() : []),
+        fetch(`${baseUrl}api/friends/pending`, { headers }).then(r => r.ok ? r.json() : []),
+      ]).then(([rucksData, statsData, commData, friendsData, pendingData]) => {
         setRucks(rucksData);
         setStats(statsData);
         setCommunities(commData);
+        setFriendCount(friendsData.length);
+        setPendingCount(pendingData.length);
       }).catch(() => {}).finally(() => setLoading(false));
     }, [token, baseUrl])
   );
@@ -231,6 +237,20 @@ export default function ProfileScreen() {
           </View>
         ) : null}
         {displayBio ? <Text style={styles.bio}>{displayBio}</Text> : null}
+
+        <TouchableOpacity
+          style={styles.friendsLink}
+          onPress={() => router.push('/friends')}
+        >
+          <Ionicons name="people" size={16} color={Colors.burntOrange} />
+          <Text style={styles.friendsLinkText}>{friendCount} Friends</Text>
+          {pendingCount > 0 && (
+            <View style={styles.pendingBadge}>
+              <Text style={styles.pendingBadgeText}>{pendingCount}</Text>
+            </View>
+          )}
+          <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+        </TouchableOpacity>
       </LinearGradient>
 
       <View style={styles.statsCard}>
@@ -388,6 +408,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+  friendsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  friendsLinkText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: Colors.bone,
+  },
+  pendingBadge: {
+    backgroundColor: Colors.burntOrange,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  pendingBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: Colors.bone,
   },
   statsCard: {
     flexDirection: 'row',

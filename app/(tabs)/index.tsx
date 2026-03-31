@@ -13,8 +13,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import { getApiUrl } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth';
 
 interface FeedRuck {
   id: string;
@@ -67,7 +68,10 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
 
   return (
     <View style={styles.card}>
-      <View style={styles.cardHeader}>
+      <TouchableOpacity
+        style={styles.cardHeader}
+        onPress={() => router.push({ pathname: '/user-profile', params: { userId: ruck.userId } })}
+      >
         {ruck.userAvatar ? (
           <Image source={{ uri: ruck.userAvatar }} style={styles.avatar} />
         ) : (
@@ -79,7 +83,7 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
           <Text style={styles.userName}>{ruck.userName || 'Rucker'}</Text>
           <Text style={styles.cardDate}>{dateLabel}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
@@ -112,6 +116,7 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const [rucks, setRucks] = useState<FeedRuck[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -126,7 +131,9 @@ export default function FeedScreen() {
       setRefreshing(false);
       return;
     }
-    fetch(`${baseUrl}api/rucks/feed`)
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    fetch(`${baseUrl}api/rucks/feed`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(setRucks)
       .catch(() => {})
@@ -134,7 +141,7 @@ export default function FeedScreen() {
         setLoading(false);
         setRefreshing(false);
       });
-  }, [baseUrl]);
+  }, [baseUrl, token]);
 
   useFocusEffect(
     useCallback(() => {
