@@ -318,6 +318,22 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(rucks).where(eq(rucks.userId, userId)).orderBy(desc(rucks.createdAt));
   }
 
+  async getRuck(id: string): Promise<Ruck | undefined> {
+    const [ruck] = await db.select().from(rucks).where(eq(rucks.id, id));
+    return ruck;
+  }
+
+  async shareRuckToCommunity(ruckId: string, communityId: string, challengeId: string | null, userId: string, content: string): Promise<void> {
+    await db.update(rucks).set({ communityId, challengeId }).where(eq(rucks.id, ruckId));
+    await db.insert(communityPosts).values({
+      communityId,
+      postType: 'ruck_share',
+      referenceId: ruckId,
+      userId,
+      content,
+    });
+  }
+
   async getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }> {
     const userRucks = await this.getUserRucks(userId);
     const totalRucks = userRucks.length;

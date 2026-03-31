@@ -56,6 +56,8 @@ export const rucks = pgTable("rucks", {
   notes: text("notes"),
   routeCoordinates: text("route_coordinates"),
   routeImageUrl: text("route_image_url"),
+  communityId: varchar("community_id"),
+  challengeId: varchar("challenge_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

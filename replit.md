@@ -117,6 +117,9 @@ shared/
 - **Friends System:** Send/accept/decline friend requests, unfriend. Friend count visible on profiles. Friends list + pending requests screen accessible from profile. Tappable member names in communities navigate to user profiles with friend actions.
 - **Friends Feed:** Main feed shows rucks from friends + self when user has friends, falls back to global recent rucks otherwise. Auth token passed to feed endpoint.
 - **User Profiles:** GET `/api/users/:id/profile` returns public profile with friend count and ruck stats. Dedicated user-profile screen with Add Friend/Pending/Friends/Accept button based on relationship state.
+- **Ruck Sharing:** After saving a ruck, users can share it to a community they belong to. Optional challenge tagging. Creates community post of type `ruck_share` with referenceId pointing to the ruck. POST `/api/rucks/:id/share` endpoint handles this.
+- **Challenge Detail:** Dedicated screen at `app/challenge/[id].tsx` with goal, participants, dates, join/leave button. GET `/api/challenges/:id` returns challenge with community info, participant count, isJoined.
+- **Tappable Challenges:** Pinned challenges, challenges tab items, and challenge announcements in community feed all navigate to challenge detail screen.
 - **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
 
 ## Key Dependencies

@@ -8,6 +8,8 @@ import {
   TextInput,
   Platform,
   Alert,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +23,21 @@ import { getApiUrl } from '@/lib/query-client';
 
 import * as Location from 'expo-location';
 import RuckMap, { type RuckMapHandle } from '@/components/RuckMap';
+
+interface CommunityOption {
+  id: string;
+  name: string;
+  banner: string | null;
+  challenges: {
+    id: string;
+    title: string;
+    challengeType: string;
+    goalValue: number;
+    goalUnit: string;
+    endDate: string;
+    joined: boolean;
+  }[];
+}
 
 interface Coord {
   latitude: number;
@@ -68,6 +85,13 @@ export default function LogRuckScreen() {
   const [gpsActive, setGpsActive] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [savedRuckId, setSavedRuckId] = useState<string | null>(null);
+  const [savedRuckDistance, setSavedRuckDistance] = useState(0);
+  const [communityOptions, setCommunityOptions] = useState<CommunityOption[]>([]);
+  const [selectedCommunity, setSelectedCommunity] = useState<string | null>(null);
+  const [selectedChallenge, setSelectedChallenge] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const [routeCoords, setRouteCoords] = useState<Coord[]>([]);
   const [currentPos, setCurrentPos] = useState<Coord | null>(null);
@@ -255,20 +279,32 @@ export default function LogRuckScreen() {
         throw new Error(data.message);
       }
 
+      const savedData = await res.json();
       setSaved(true);
+      setSavedRuckId(savedData.id);
+      setSavedRuckDistance(ruckDistance);
+
+      try {
+        const commRes = await fetch(`${baseUrl}api/user/communities-with-challenges`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (commRes.ok) {
+          const comms: CommunityOption[] = await commRes.json();
+          if (comms.length > 0) {
+            setCommunityOptions(comms);
+            setSelectedCommunity(null);
+            setSelectedChallenge(null);
+            setTimeout(() => {
+              setSaved(false);
+              setShowShareModal(true);
+            }, 800);
+            return;
+          }
+        }
+      } catch {}
+
       setTimeout(() => {
-        setSaved(false);
-        setDistance('');
-        setHours('');
-        setMinutes('');
-        setSeconds('');
-        setWeight('');
-        setNotes('');
-        setGpsActive(false);
-        setGpsFinished(false);
-        setRouteCoords([]);
-        setGpsMiles(0);
-        setGpsElapsed(0);
+        resetForm();
       }, 1500);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Could not save ruck.';
@@ -276,6 +312,61 @@ export default function LogRuckScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const resetForm = () => {
+    setSaved(false);
+    setDistance('');
+    setHours('');
+    setMinutes('');
+    setSeconds('');
+    setWeight('');
+    setNotes('');
+    setGpsActive(false);
+    setGpsFinished(false);
+    setRouteCoords([]);
+    setGpsMiles(0);
+    setGpsElapsed(0);
+    setSavedRuckId(null);
+    setSavedRuckDistance(0);
+    setShowShareModal(false);
+    setCommunityOptions([]);
+    setSelectedCommunity(null);
+    setSelectedChallenge(null);
+  };
+
+  const handleShareToCommunity = async () => {
+    if (!baseUrl || !token || !savedRuckId || !selectedCommunity || sharing) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`${baseUrl}api/rucks/${savedRuckId}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          communityId: selectedCommunity,
+          challengeId: selectedChallenge || undefined,
+        }),
+      });
+      if (res.ok) {
+        setShowShareModal(false);
+        Alert.alert('Shared!', 'Your ruck has been posted to the community.');
+        resetForm();
+      } else {
+        const data = await res.json().catch(() => ({ message: 'Failed to share' }));
+        Alert.alert('Error', data.message);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not share ruck.');
+    }
+    setSharing(false);
+  };
+
+  const handleSkipShare = () => {
+    setShowShareModal(false);
+    resetForm();
   };
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -553,6 +644,94 @@ export default function LogRuckScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={showShareModal}
+        transparent
+        animationType="slide"
+        onRequestClose={handleSkipShare}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>SHARE TO COMMUNITY</Text>
+              <TouchableOpacity onPress={handleSkipShare}>
+                <Ionicons name="close" size={24} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Post your {savedRuckDistance.toFixed(1)} mile ruck to a community
+            </Text>
+
+            <Text style={styles.sectionLabel}>SELECT COMMUNITY</Text>
+            <FlatList
+              data={communityOptions}
+              keyExtractor={(item) => item.id}
+              style={styles.communityList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.communityItem,
+                    selectedCommunity === item.id && styles.communityItemSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedCommunity(item.id);
+                    setSelectedChallenge(null);
+                  }}
+                >
+                  <View style={styles.communityItemRow}>
+                    <View style={styles.communityRadio}>
+                      {selectedCommunity === item.id && <View style={styles.communityRadioDot} />}
+                    </View>
+                    <Text style={styles.communityItemName}>{item.name}</Text>
+                  </View>
+                  {selectedCommunity === item.id && item.challenges.length > 0 && (
+                    <View style={styles.challengeSection}>
+                      <Text style={styles.challengeSectionLabel}>TAG A CHALLENGE (optional)</Text>
+                      {item.challenges.map((ch) => (
+                        <TouchableOpacity
+                          key={ch.id}
+                          style={[
+                            styles.challengeItem,
+                            selectedChallenge === ch.id && styles.challengeItemSelected,
+                          ]}
+                          onPress={() => setSelectedChallenge(selectedChallenge === ch.id ? null : ch.id)}
+                        >
+                          <View style={styles.challengeCheck}>
+                            {selectedChallenge === ch.id && (
+                              <Ionicons name="checkmark" size={12} color={Colors.burntOrange} />
+                            )}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.challengeItemTitle}>{ch.title}</Text>
+                            <Text style={styles.challengeItemGoal}>
+                              {ch.goalValue} {ch.goalUnit} {ch.joined ? '' : '(not joined)'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.skipBtn} onPress={handleSkipShare}>
+                <Text style={styles.skipBtnText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.shareBtn, !selectedCommunity && styles.shareBtnDisabled]}
+                onPress={handleShareToCommunity}
+                disabled={!selectedCommunity || sharing}
+              >
+                <Ionicons name="share-outline" size={16} color={Colors.bone} />
+                <Text style={styles.shareBtnText}>{sharing ? 'Sharing...' : 'Share'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -849,5 +1028,170 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.bone,
     letterSpacing: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.charcoal,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '80%',
+    borderTopWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modalTitle: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 20,
+    color: Colors.bone,
+    letterSpacing: 2,
+  },
+  modalSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginBottom: 20,
+  },
+  sectionLabel: {
+    fontFamily: 'Oswald_500Medium',
+    fontSize: 11,
+    color: Colors.textMuted,
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  communityList: {
+    maxHeight: 350,
+  },
+  communityItem: {
+    backgroundColor: Colors.darkCard,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  communityItemSelected: {
+    borderColor: Colors.burntOrange,
+  },
+  communityItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  communityRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  communityRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.burntOrange,
+  },
+  communityItemName: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 16,
+    color: Colors.bone,
+  },
+  challengeSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.cardBorder,
+  },
+  challengeSectionLabel: {
+    fontFamily: 'Oswald_500Medium',
+    fontSize: 10,
+    color: Colors.textMuted,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  challengeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  challengeItemSelected: {
+    backgroundColor: Colors.forestGreen,
+  },
+  challengeCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.textMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengeItemTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: Colors.bone,
+  },
+  challengeItemGoal: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  skipBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.darkCard,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  skipBtnText: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 15,
+    color: Colors.textMuted,
+    letterSpacing: 1,
+  },
+  shareBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.burntOrange,
+  },
+  shareBtnDisabled: {
+    opacity: 0.5,
+  },
+  shareBtnText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 15,
+    color: Colors.bone,
+    letterSpacing: 1,
   },
 });

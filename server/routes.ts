@@ -330,6 +330,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/user/communities-with-challenges", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const userComms = await storage.getUserCommunities(user.id);
+      const now = new Date();
+      const result = await Promise.all(userComms.map(async (comm) => {
+        const allChallenges = await storage.getCommunityChall(comm.id);
+        const activeChallenges = allChallenges.filter((c) => new Date(c.endDate) > now);
+        const challengeIds = activeChallenges.map((c) => c.id);
+        const joinedSet = await storage.getUserChallengeIds(user.id, challengeIds);
+        return {
+          id: comm.id,
+          name: comm.name,
+          banner: comm.banner,
+          challenges: activeChallenges.map((c) => ({
+            id: c.id,
+            title: c.title,
+            challengeType: c.challengeType,
+            goalValue: c.goalValue,
+            goalUnit: c.goalUnit,
+            endDate: c.endDate,
+            joined: joinedSet.has(c.id),
+          })),
+        };
+      }));
+      return res.json(result);
+    } catch (error) {
+      console.error("Get communities with challenges error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/challenges/:id", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const challenge = await storage.getChallenge(req.params.id);
+      if (!challenge) {
+        return res.status(404).json({ message: "Challenge not found" });
+      }
+      const community = await storage.getCommunity(challenge.communityId);
+      const participantCount = await storage.getChallengeParticipantCount(challenge.id);
+      const authHeader = req.headers.authorization;
+      let isJoined = false;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const authToken = authHeader.slice(7);
+        const authUser = await storage.getSessionUser(authToken);
+        if (authUser) {
+          const joinedSet = await storage.getUserChallengeIds(authUser.id, [challenge.id]);
+          isJoined = joinedSet.has(challenge.id);
+        }
+      }
+      return res.json({
+        ...challenge,
+        communityName: community?.name || 'Unknown',
+        communityBanner: community?.banner || null,
+        participantCount,
+        isJoined,
+      });
+    } catch (error) {
+      console.error("Get challenge detail error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/rucks/:id/share", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const user = (req as AuthenticatedRequest).authUser;
+      const ruck = await storage.getRuck(req.params.id);
+      if (!ruck) return res.status(404).json({ message: "Ruck not found" });
+      if (ruck.userId !== user.id) return res.status(403).json({ message: "Not your ruck" });
+
+      const { communityId, challengeId } = req.body;
+      if (!communityId) return res.status(400).json({ message: "Community ID is required" });
+
+      const userComms = await storage.getUserCommunities(user.id);
+      if (!userComms.some((c) => c.id === communityId)) {
+        return res.status(403).json({ message: "You must be a member of this community to share" });
+      }
+
+      const distMiles = ((ruck.distance || 0) / 100).toFixed(1);
+      let content = `${user.name || user.username} completed a ${distMiles} mile ruck!`;
+      if (challengeId) {
+        const challenge = await storage.getChallenge(challengeId);
+        if (!challenge || challenge.communityId !== communityId) {
+          return res.status(400).json({ message: "Invalid challenge for this community" });
+        }
+        content = `${user.name || user.username} completed a ${distMiles} mile ruck for "${challenge.title}"!`;
+      }
+
+      await storage.shareRuckToCommunity(ruck.id, communityId, challengeId || null, user.id, content);
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Share ruck error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/rucks", authMiddleware, async (req: Request, res: Response) => {
     try {
       const result = insertRuckSchema.safeParse(req.body);

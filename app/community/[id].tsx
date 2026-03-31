@@ -97,10 +97,15 @@ function formatTimeAgo(dateStr: string): string {
   return `${Math.floor(days / 7)}w ago`;
 }
 
-function MiniRuckCard({ item }: { item: FeedItem }) {
+function MiniRuckCard({ item, onChallengePress }: { item: FeedItem; onChallengePress?: (referenceId: string) => void }) {
   if (item.type === 'post') {
+    const isTappable = !!item.referenceId && (item.postType === 'challenge_announcement' || item.postType === 'ruck_share');
+    const Wrapper = isTappable ? TouchableOpacity : View;
+    const wrapperProps = isTappable
+      ? { onPress: () => item.referenceId && onChallengePress?.(item.referenceId), activeOpacity: 0.8 }
+      : {};
     return (
-      <View style={styles.announcementCard}>
+      <Wrapper style={styles.announcementCard} {...(wrapperProps as any)}>
         <View style={styles.miniCardHeader}>
           {item.userAvatar ? (
             <Image source={{ uri: item.userAvatar }} style={styles.miniAvatar} />
@@ -114,14 +119,14 @@ function MiniRuckCard({ item }: { item: FeedItem }) {
             {item.createdAt && <Text style={styles.miniDate}>{formatTimeAgo(item.createdAt)}</Text>}
           </View>
           <View style={styles.announcementBadge}>
-            <Ionicons name="flash" size={12} color={Colors.burntOrange} />
-            <Text style={styles.announcementBadgeText}>Challenge</Text>
+            <Ionicons name={item.postType === 'ruck_share' ? 'share-outline' : 'flash'} size={12} color={Colors.burntOrange} />
+            <Text style={styles.announcementBadgeText}>{item.postType === 'ruck_share' ? 'Shared' : 'Challenge'}</Text>
           </View>
         </View>
         {item.content && (
           <Text style={styles.announcementContent}>{item.content}</Text>
         )}
-      </View>
+      </Wrapper>
     );
   }
 
@@ -166,13 +171,13 @@ function MiniRuckCard({ item }: { item: FeedItem }) {
   );
 }
 
-function PinnedChallengeCard({ challenge, isJoined, onToggleJoin }: { challenge: ChallengeData; isJoined: boolean; onToggleJoin: () => void }) {
+function PinnedChallengeCard({ challenge, isJoined, onToggleJoin, onPress }: { challenge: ChallengeData; isJoined: boolean; onToggleJoin: () => void; onPress: () => void }) {
   const endDate = new Date(challenge.endDate);
   const isExpired = endDate < new Date();
   if (isExpired) return null;
 
   return (
-    <View style={styles.pinnedChallenge}>
+    <TouchableOpacity style={styles.pinnedChallenge} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.pinnedHeader}>
         <View style={styles.pinnedIconWrap}>
           <Ionicons
@@ -196,7 +201,7 @@ function PinnedChallengeCard({ challenge, isJoined, onToggleJoin }: { challenge:
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -536,6 +541,7 @@ export default function CommunityDetailScreen() {
                     challenge={ch}
                     isJoined={joinedChallengeIds.has(ch.id)}
                     onToggleJoin={() => toggleChallengeJoin(ch.id)}
+                    onPress={() => router.push(`/challenge/${ch.id}`)}
                   />
                 ))}
               </View>
@@ -546,7 +552,19 @@ export default function CommunityDetailScreen() {
                 <Text style={styles.emptyText}>No activity yet from community members</Text>
               </View>
             ) : (
-              feed.map((item) => <MiniRuckCard key={item.id} item={item} />)
+              feed.map((item) => (
+                <MiniRuckCard
+                  key={item.id}
+                  item={item}
+                  onChallengePress={(refId) => {
+                    if (item.type === 'post' && item.postType === 'challenge_announcement') {
+                      router.push(`/challenge/${refId}`);
+                    } else if (item.type === 'post' && item.postType === 'ruck_share') {
+                      router.push(`/ruck/${refId}`);
+                    }
+                  }}
+                />
+              ))
             )}
           </View>
         )}
@@ -716,7 +734,7 @@ export default function CommunityDetailScreen() {
                 const endDate = new Date(ch.endDate);
                 const isExpired = endDate < new Date();
                 return (
-                  <View key={ch.id} style={styles.challengeCard}>
+                  <TouchableOpacity key={ch.id} style={styles.challengeCard} onPress={() => router.push(`/challenge/${ch.id}`)} activeOpacity={0.8}>
                     <View style={styles.challengeTop}>
                       <View style={styles.challengeIconWrap}>
                         <Ionicons
@@ -754,7 +772,7 @@ export default function CommunityDetailScreen() {
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
