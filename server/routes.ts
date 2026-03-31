@@ -426,6 +426,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/rucks/:id/like", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const user = (req as unknown as AuthenticatedRequest).authUser;
+      const ruck = await storage.getRuck(req.params.id);
+      if (!ruck) return res.status(404).json({ message: "Ruck not found" });
+      const result = await storage.toggleRuckLike(req.params.id, user.id);
+      return res.json(result);
+    } catch (error) {
+      console.error("Toggle like error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/rucks/:id/comments", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const ruck = await storage.getRuck(req.params.id);
+      if (!ruck) return res.status(404).json({ message: "Ruck not found" });
+      const comments = await storage.getRuckComments(req.params.id);
+      return res.json(comments);
+    } catch (error) {
+      console.error("Get comments error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/rucks/:id/comments", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const user = (req as unknown as AuthenticatedRequest).authUser;
+      const ruck = await storage.getRuck(req.params.id);
+      if (!ruck) return res.status(404).json({ message: "Ruck not found" });
+      const { content } = req.body;
+      if (!content || typeof content !== 'string' || content.trim().length === 0) {
+        return res.status(400).json({ message: "Comment content is required" });
+      }
+      if (content.length > 500) {
+        return res.status(400).json({ message: "Comment must be under 500 characters" });
+      }
+      const comment = await storage.addRuckComment(req.params.id, user.id, content.trim());
+      return res.status(201).json(comment);
+    } catch (error) {
+      console.error("Add comment error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.post("/api/rucks", authMiddleware, async (req: Request, res: Response) => {
     try {
       const result = insertRuckSchema.safeParse(req.body);
@@ -519,6 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/rucks/feed", async (req: Request, res: Response) => {
     try {
+      let feedRucks;
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith("Bearer ")) {
         const authToken = authHeader.slice(7);
@@ -528,13 +574,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (friendIds.length > 0) {
             const friendFeed = await storage.getFriendsFeed(authUser.id, 50);
             if (friendFeed.length > 0) {
-              return res.json(friendFeed);
+              feedRucks = friendFeed;
             }
           }
         }
       }
-      const feedRucks = await storage.getRecentRucks(50);
-      return res.json(feedRucks);
+      if (!feedRucks) {
+        feedRucks = await storage.getRecentRucks(50);
+      }
+      const ruckIds = feedRucks.map(r => r.id);
+      const socialCounts = await storage.getRuckLikeAndCommentCounts(ruckIds);
+      const enriched = feedRucks.map(r => {
+        const counts = socialCounts.get(r.id) || { likeCount: 0, commentCount: 0 };
+        return { ...r, likeCount: counts.likeCount, commentCount: counts.commentCount };
+      });
+      return res.json(enriched);
     } catch (error) {
       console.error("Get rucks feed error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -548,6 +602,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(stats);
     } catch (error) {
       console.error("Get ruck stats error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/rucks/:id", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      let userId: string | undefined;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const authToken = authHeader.slice(7);
+        const authUser = await storage.getSessionUser(authToken);
+        if (authUser) userId = authUser.id;
+      }
+      const detail = await storage.getRuckDetail(req.params.id, userId);
+      if (!detail) return res.status(404).json({ message: "Ruck not found" });
+      return res.json(detail);
+    } catch (error) {
+      console.error("Get ruck detail error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });

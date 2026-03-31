@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,13 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
@@ -17,100 +21,274 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
-import { MOCK_RUCKS } from '@/data/mockData';
+import { getApiUrl } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth';
+import RuckMap from '@/components/RuckMap';
 
-const PHOTO_PLACEHOLDERS = [
-  'https://images.unsplash.com/photo-1551632811-561732d1e306?w=300',
-  'https://images.unsplash.com/photo-1463044304029-b857fcddcaff?w=300',
-  'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?w=300',
-  'https://images.unsplash.com/photo-1519904981063-b0cf448d479e?w=300',
-];
+interface RuckDetail {
+  ruck: {
+    id: string;
+    userId: string;
+    distance: number | null;
+    durationSeconds: number | null;
+    weight: number | null;
+    notes: string | null;
+    routeCoordinates: string | null;
+    routeImageUrl: string | null;
+    createdAt: string | null;
+    userName: string | null;
+    userAvatar: string | null;
+  };
+  likeCount: number;
+  commentCount: number;
+  liked: boolean;
+}
 
-const COMMENTS = [
-  { id: 'cm1', user: 'Derek Ortiz', avatar: 'https://i.pravatar.cc/150?img=3', text: 'Solid effort! Keep grinding.', time: '1h' },
-  { id: 'cm2', user: 'Sarah Kline', avatar: 'https://i.pravatar.cc/150?img=5', text: 'Nice pace for that weight!', time: '2h' },
-  { id: 'cm3', user: 'James Hollis', avatar: 'https://i.pravatar.cc/150?img=7', text: 'That elevation though...', time: '3h' },
-];
+interface Comment {
+  id: string;
+  userId: string;
+  content: string;
+  createdAt: string | null;
+  userName: string | null;
+  userAvatar: string | null;
+}
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatPace(distanceCents: number, durationSeconds: number): string {
+  const miles = distanceCents / 100;
+  if (miles <= 0 || durationSeconds <= 0) return '--';
+  const paceMinutes = durationSeconds / 60 / miles;
+  const mins = Math.floor(paceMinutes);
+  const secs = Math.round((paceMinutes - mins) * 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return `${Math.floor(diffDays / 7)}w ago`;
+}
 
 export default function RuckDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const ruck = MOCK_RUCKS.find((r) => r.id === id) ?? MOCK_RUCKS[0];
+  const { token } = useAuth();
+  const baseUrl = (() => {
+    try { return getApiUrl(); } catch { return null; }
+  })();
 
-  const [liked, setLiked] = useState(ruck.liked);
-  const [likeCount, setLikeCount] = useState(ruck.likes);
+  const [detail, setDetail] = useState<RuckDetail | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [commentText, setCommentText] = useState('');
+  const [posting, setPosting] = useState(false);
+
   const scale = useSharedValue(1);
-
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  const handleLike = () => {
+  const loadData = useCallback(() => {
+    if (!baseUrl || !id) {
+      setLoading(false);
+      return;
+    }
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    Promise.all([
+      fetch(`${baseUrl}api/rucks/${id}`, { headers }).then(r => r.ok ? r.json() : null),
+      fetch(`${baseUrl}api/rucks/${id}/comments`, { headers }).then(r => r.ok ? r.json() : []),
+    ])
+      .then(([ruckDetail, ruckComments]) => {
+        if (ruckDetail) {
+          setDetail(ruckDetail);
+          setLiked(ruckDetail.liked);
+          setLikeCount(ruckDetail.likeCount);
+        }
+        setComments(ruckComments || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [baseUrl, id, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      loadData();
+    }, [loadData])
+  );
+
+  const handleLike = async () => {
+    if (!baseUrl || !id || !token) return;
     scale.value = withSpring(1.3, { damping: 3 }, () => {
       scale.value = withSpring(1);
     });
-    setLiked((prev) => !prev);
-    setLikeCount((prev) => (liked ? prev - 1 : prev + 1));
+    setLiked(prev => !prev);
+    setLikeCount(prev => liked ? prev - 1 : prev + 1);
+
+    try {
+      const res = await fetch(`${baseUrl}api/rucks/${id}/like`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLiked(data.liked);
+        setLikeCount(data.likeCount);
+      }
+    } catch {}
+  };
+
+  const handleComment = async () => {
+    if (!baseUrl || !id || !token || !commentText.trim()) return;
+    setPosting(true);
+    try {
+      const res = await fetch(`${baseUrl}api/rucks/${id}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: commentText.trim() }),
+      });
+      if (res.ok) {
+        const newComment = await res.json();
+        setComments(prev => [newComment, ...prev]);
+        setCommentText('');
+      }
+    } catch {}
+    setPosting(false);
   };
 
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator color={Colors.burntOrange} style={{ marginTop: 100 }} />
+      </View>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.emptyState}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.textMuted} />
+          <Text style={styles.emptyText}>Ruck not found</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const { ruck } = detail;
+  const miles = ((ruck.distance || 0) / 100).toFixed(1);
+  const duration = ruck.durationSeconds ? formatDuration(ruck.durationSeconds) : '--';
+  const pace = ruck.durationSeconds ? formatPace(ruck.distance || 0, ruck.durationSeconds) : '--';
+  const lbsMoved = Math.round(((ruck.distance || 0) / 100) * (ruck.weight || 0));
+  const dateLabel = ruck.createdAt ? timeAgo(ruck.createdAt) : '';
+
+  let routeCoords: Array<{ latitude: number; longitude: number }> = [];
+  if (ruck.routeCoordinates) {
+    try {
+      routeCoords = JSON.parse(ruck.routeCoordinates);
+    } catch {}
+  }
+  const hasRoute = routeCoords.length >= 2;
+  const lastCoord = routeCoords.length > 0 ? routeCoords[routeCoords.length - 1] : null;
+
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={90}
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: bottomPad + 30 }]}
       >
-        <Image source={{ uri: ruck.photo }} style={styles.heroImage} />
+        {ruck.routeImageUrl ? (
+          <Image source={{ uri: ruck.routeImageUrl }} style={styles.heroImage} />
+        ) : null}
 
-        <View style={styles.ruckerRow}>
-          <Image source={{ uri: ruck.userAvatar }} style={styles.ruckerAvatar} />
+        <TouchableOpacity
+          style={styles.ruckerRow}
+          onPress={() => router.push({ pathname: '/user-profile', params: { userId: ruck.userId } })}
+        >
+          {ruck.userAvatar ? (
+            <Image source={{ uri: ruck.userAvatar }} style={styles.ruckerAvatar} />
+          ) : (
+            <View style={[styles.ruckerAvatar, styles.avatarPlaceholder]}>
+              <Ionicons name="person" size={18} color={Colors.textMuted} />
+            </View>
+          )}
           <View>
-            <Text style={styles.ruckerName}>{ruck.userName}</Text>
-            <Text style={styles.ruckDate}>{ruck.date}</Text>
+            <Text style={styles.ruckerName}>{ruck.userName || 'Rucker'}</Text>
+            <Text style={styles.ruckDate}>{dateLabel}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Ionicons name="walk-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>{ruck.distance}</Text>
+            <Text style={styles.statCardValue}>{miles}</Text>
             <Text style={styles.statCardLabel}>miles</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="time-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>{ruck.duration}</Text>
+            <Text style={styles.statCardValue}>{duration}</Text>
             <Text style={styles.statCardLabel}>duration</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="fitness-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>{ruck.weight}</Text>
+            <Text style={styles.statCardValue}>{ruck.weight || 0}</Text>
             <Text style={styles.statCardLabel}>lbs</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="speedometer-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>{ruck.pace}</Text>
+            <Text style={styles.statCardValue}>{pace}</Text>
             <Text style={styles.statCardLabel}>min/mi</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="trending-up-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>{ruck.elevation}</Text>
-            <Text style={styles.statCardLabel}>ft gain</Text>
+            <Text style={styles.statCardValue}>{lbsMoved}</Text>
+            <Text style={styles.statCardLabel}>lbs moved</Text>
           </View>
           <View style={styles.statCard}>
             <Ionicons name="barbell-outline" size={20} color={Colors.burntOrange} />
-            <Text style={styles.statCardValue}>
-              {(ruck.distance * ruck.weight).toFixed(0)}
-            </Text>
-            <Text style={styles.statCardLabel}>lbs moved</Text>
+            <Text style={styles.statCardValue}>{ruck.weight || 0}</Text>
+            <Text style={styles.statCardLabel}>pack wt</Text>
           </View>
         </View>
 
-        <View style={styles.mapPlaceholder}>
-          <Ionicons name="map-outline" size={32} color={Colors.textMuted} />
-          <Text style={styles.mapPlaceholderText}>Route Map</Text>
-          <View style={styles.mapRoute} />
-        </View>
+        {hasRoute ? (
+          <View style={styles.mapContainer}>
+            <RuckMap currentPos={lastCoord} routeCoords={routeCoords} style={styles.mapInner} />
+          </View>
+        ) : (
+          <View style={styles.mapPlaceholder}>
+            <Ionicons name="map-outline" size={32} color={Colors.textMuted} />
+            <Text style={styles.mapPlaceholderText}>No route recorded</Text>
+          </View>
+        )}
 
         {ruck.notes ? (
           <View style={styles.notesSection}>
@@ -118,15 +296,6 @@ export default function RuckDetailScreen() {
             <Text style={styles.notesText}>{ruck.notes}</Text>
           </View>
         ) : null}
-
-        <View style={styles.photosSection}>
-          <Text style={styles.sectionTitle}>PHOTOS</Text>
-          <View style={styles.photosGrid}>
-            {PHOTO_PLACEHOLDERS.map((p, i) => (
-              <Image key={i} source={{ uri: p }} style={styles.photoThumb} />
-            ))}
-          </View>
-        </View>
 
         <View style={styles.actionsBar}>
           <TouchableOpacity style={styles.actionItem} onPress={handleLike}>
@@ -138,36 +307,74 @@ export default function RuckDetailScreen() {
               />
             </Animated.View>
             <Text style={[styles.actionLabel, liked && { color: Colors.burntOrange }]}>
-              {likeCount} likes
+              {likeCount} {likeCount === 1 ? 'like' : 'likes'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionItem}>
+          <View style={styles.actionItem}>
             <Ionicons name="chatbubble-outline" size={22} color={Colors.textSecondary} />
-            <Text style={styles.actionLabel}>{ruck.comments} comments</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionItem}>
-            <Ionicons name="share-outline" size={22} color={Colors.textSecondary} />
-            <Text style={styles.actionLabel}>Share</Text>
-          </TouchableOpacity>
+            <Text style={styles.actionLabel}>
+              {comments.length} {comments.length === 1 ? 'comment' : 'comments'}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.commentsSection}>
           <Text style={styles.sectionTitle}>COMMENTS</Text>
-          {COMMENTS.map((c) => (
-            <View key={c.id} style={styles.commentRow}>
-              <Image source={{ uri: c.avatar }} style={styles.commentAvatar} />
-              <View style={styles.commentBubble}>
-                <View style={styles.commentHeader}>
-                  <Text style={styles.commentUser}>{c.user}</Text>
-                  <Text style={styles.commentTime}>{c.time}</Text>
-                </View>
-                <Text style={styles.commentText}>{c.text}</Text>
-              </View>
+
+          {token ? (
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Add a comment..."
+                placeholderTextColor={Colors.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+                maxLength={500}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn, (!commentText.trim() || posting) && styles.sendBtnDisabled]}
+                onPress={handleComment}
+                disabled={!commentText.trim() || posting}
+              >
+                {posting ? (
+                  <ActivityIndicator size="small" color={Colors.bone} />
+                ) : (
+                  <Ionicons name="send" size={18} color={Colors.bone} />
+                )}
+              </TouchableOpacity>
             </View>
-          ))}
+          ) : null}
+
+          {comments.length === 0 ? (
+            <Text style={styles.noComments}>No comments yet. Be the first!</Text>
+          ) : (
+            comments.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={styles.commentRow}
+                onPress={() => router.push({ pathname: '/user-profile', params: { userId: c.userId } })}
+              >
+                {c.userAvatar ? (
+                  <Image source={{ uri: c.userAvatar }} style={styles.commentAvatar} />
+                ) : (
+                  <View style={[styles.commentAvatar, styles.avatarPlaceholder]}>
+                    <Ionicons name="person" size={14} color={Colors.textMuted} />
+                  </View>
+                )}
+                <View style={styles.commentBubble}>
+                  <View style={styles.commentHeader}>
+                    <Text style={styles.commentUser}>{c.userName || 'Rucker'}</Text>
+                    <Text style={styles.commentTime}>{c.createdAt ? timeAgo(c.createdAt) : ''}</Text>
+                  </View>
+                  <Text style={styles.commentText}>{c.content}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -198,6 +405,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 2,
     borderColor: Colors.burntOrange,
+  },
+  avatarPlaceholder: {
+    backgroundColor: Colors.darkCard,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   ruckerName: {
     fontFamily: 'Inter_600SemiBold',
@@ -238,16 +450,28 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  mapPlaceholder: {
+  mapContainer: {
     marginHorizontal: 16,
     height: 200,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    marginBottom: 20,
+  },
+  mapInner: {
+    width: '100%',
+    height: '100%',
+  },
+  mapPlaceholder: {
+    marginHorizontal: 16,
+    height: 120,
     backgroundColor: Colors.darkCard,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.cardBorder,
-    overflow: 'hidden',
     gap: 8,
     marginBottom: 20,
   },
@@ -255,16 +479,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
     color: Colors.textMuted,
-  },
-  mapRoute: {
-    position: 'absolute',
-    left: 30,
-    right: 30,
-    top: 60,
-    height: 2,
-    backgroundColor: Colors.burntOrange,
-    opacity: 0.5,
-    borderRadius: 1,
   },
   notesSection: {
     paddingHorizontal: 16,
@@ -282,20 +496,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     lineHeight: 20,
-  },
-  photosSection: {
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  photosGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  photoThumb: {
-    width: '48%',
-    height: 120,
-    borderRadius: 10,
   },
   actionsBar: {
     flexDirection: 'row',
@@ -320,6 +520,43 @@ const styles = StyleSheet.create({
   },
   commentsSection: {
     paddingHorizontal: 16,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+    alignItems: 'flex-end',
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: Colors.darkCard,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: Colors.bone,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+    maxHeight: 80,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.burntOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendBtnDisabled: {
+    opacity: 0.4,
+  },
+  noComments: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
   commentRow: {
     flexDirection: 'row',
@@ -359,5 +596,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 100,
+    gap: 12,
+  },
+  emptyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 15,
+    color: Colors.textMuted,
   },
 });

@@ -1,5 +1,5 @@
-import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost, Friendship } from "@shared/schema";
-import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships } from "@shared/schema";
+import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost, Friendship, RuckLike, RuckComment } from "@shared/schema";
+import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships, ruckLikes, ruckComments } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -332,6 +332,155 @@ export class DatabaseStorage implements IStorage {
       userId,
       content,
     });
+  }
+
+  async getRuckDetail(ruckId: string, requestingUserId?: string): Promise<{
+    ruck: Ruck & { userName: string | null; userAvatar: string | null };
+    likeCount: number;
+    commentCount: number;
+    liked: boolean;
+  } | null> {
+    const [result] = await db
+      .select({
+        id: rucks.id,
+        userId: rucks.userId,
+        distance: rucks.distance,
+        durationSeconds: rucks.durationSeconds,
+        weight: rucks.weight,
+        notes: rucks.notes,
+        routeCoordinates: rucks.routeCoordinates,
+        routeImageUrl: rucks.routeImageUrl,
+        communityId: rucks.communityId,
+        challengeId: rucks.challengeId,
+        createdAt: rucks.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(rucks)
+      .leftJoin(users, eq(rucks.userId, users.id))
+      .where(eq(rucks.id, ruckId));
+
+    if (!result) return null;
+
+    const [likeRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(ruckLikes)
+      .where(eq(ruckLikes.ruckId, ruckId));
+    const likeCount = Number(likeRow?.count || 0);
+
+    const [commentRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(ruckComments)
+      .where(eq(ruckComments.ruckId, ruckId));
+    const commentCount = Number(commentRow?.count || 0);
+
+    let liked = false;
+    if (requestingUserId) {
+      const [existingLike] = await db.select().from(ruckLikes).where(
+        and(eq(ruckLikes.ruckId, ruckId), eq(ruckLikes.userId, requestingUserId)),
+      );
+      liked = !!existingLike;
+    }
+
+    return { ruck: result as Ruck & { userName: string | null; userAvatar: string | null }, likeCount, commentCount, liked };
+  }
+
+  async toggleRuckLike(ruckId: string, userId: string): Promise<{ liked: boolean; likeCount: number }> {
+    const [existing] = await db.select().from(ruckLikes).where(
+      and(eq(ruckLikes.ruckId, ruckId), eq(ruckLikes.userId, userId)),
+    );
+
+    if (existing) {
+      await db.delete(ruckLikes).where(eq(ruckLikes.id, existing.id));
+    } else {
+      await db.insert(ruckLikes).values({ ruckId, userId });
+    }
+
+    const [countRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(ruckLikes)
+      .where(eq(ruckLikes.ruckId, ruckId));
+
+    return { liked: !existing, likeCount: Number(countRow?.count || 0) };
+  }
+
+  async getRuckComments(ruckId: string): Promise<Array<{
+    id: string;
+    userId: string;
+    content: string;
+    createdAt: Date | null;
+    userName: string | null;
+    userAvatar: string | null;
+  }>> {
+    return db
+      .select({
+        id: ruckComments.id,
+        userId: ruckComments.userId,
+        content: ruckComments.content,
+        createdAt: ruckComments.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(ruckComments)
+      .leftJoin(users, eq(ruckComments.userId, users.id))
+      .where(eq(ruckComments.ruckId, ruckId))
+      .orderBy(desc(ruckComments.createdAt));
+  }
+
+  async addRuckComment(ruckId: string, userId: string, content: string): Promise<{
+    id: string;
+    userId: string;
+    content: string;
+    createdAt: Date | null;
+    userName: string | null;
+    userAvatar: string | null;
+  }> {
+    const [comment] = await db.insert(ruckComments).values({ ruckId, userId, content }).returning();
+    const user = await this.getUser(userId);
+    return {
+      id: comment.id,
+      userId: comment.userId,
+      content: comment.content,
+      createdAt: comment.createdAt,
+      userName: user?.name || null,
+      userAvatar: user?.avatar || null,
+    };
+  }
+
+  async getRuckLikeAndCommentCounts(ruckIds: string[]): Promise<Map<string, { likeCount: number; commentCount: number }>> {
+    const result = new Map<string, { likeCount: number; commentCount: number }>();
+    if (ruckIds.length === 0) return result;
+
+    const likeCounts = await db
+      .select({
+        ruckId: ruckLikes.ruckId,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(ruckLikes)
+      .where(inArray(ruckLikes.ruckId, ruckIds))
+      .groupBy(ruckLikes.ruckId);
+
+    const commentCounts = await db
+      .select({
+        ruckId: ruckComments.ruckId,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(ruckComments)
+      .where(inArray(ruckComments.ruckId, ruckIds))
+      .groupBy(ruckComments.ruckId);
+
+    for (const id of ruckIds) {
+      result.set(id, { likeCount: 0, commentCount: 0 });
+    }
+    for (const lc of likeCounts) {
+      const entry = result.get(lc.ruckId);
+      if (entry) entry.likeCount = Number(lc.count);
+    }
+    for (const cc of commentCounts) {
+      const entry = result.get(cc.ruckId);
+      if (entry) entry.commentCount = Number(cc.count);
+    }
+    return result;
   }
 
   async getUserRuckStats(userId: string): Promise<{ totalMiles: number; totalRucks: number; weightMoved: number }> {

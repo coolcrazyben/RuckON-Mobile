@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -98,6 +98,27 @@ export const communityPosts = pgTable("community_posts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const ruckLikes = pgTable("ruck_likes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  ruckId: varchar("ruck_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("ruck_likes_ruck_user_idx").on(table.ruckId, table.userId),
+]);
+
+export const ruckComments = pgTable("ruck_comments", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  ruckId: varchar("ruck_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const friendships = pgTable("friendships", {
   id: varchar("id")
     .primaryKey()
@@ -187,3 +208,5 @@ export type UserCommunity = typeof userCommunities.$inferSelect;
 export type Challenge = typeof challenges.$inferSelect;
 export type ChallengeParticipant = typeof challengeParticipants.$inferSelect;
 export type CommunityPost = typeof communityPosts.$inferSelect;
+export type RuckLike = typeof ruckLikes.$inferSelect;
+export type RuckComment = typeof ruckComments.$inferSelect;

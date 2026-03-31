@@ -28,6 +28,8 @@ interface FeedRuck {
   createdAt: string | null;
   userName: string | null;
   userAvatar: string | null;
+  likeCount?: number;
+  commentCount?: number;
 }
 
 function formatDuration(seconds: number): string {
@@ -67,7 +69,11 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
   const dateLabel = ruck.createdAt ? timeAgo(ruck.createdAt) : '';
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.8}
+      onPress={() => router.push({ pathname: '/ruck/[id]', params: { id: ruck.id } })}
+    >
       <TouchableOpacity
         style={styles.cardHeader}
         onPress={() => router.push({ pathname: '/user-profile', params: { userId: ruck.userId } })}
@@ -110,7 +116,24 @@ function RuckCard({ ruck }: { ruck: FeedRuck }) {
       {ruck.notes ? (
         <Text style={styles.notes} numberOfLines={2}>{ruck.notes}</Text>
       ) : null}
-    </View>
+
+      {((ruck.likeCount ?? 0) > 0 || (ruck.commentCount ?? 0) > 0) ? (
+        <View style={styles.socialRow}>
+          {(ruck.likeCount ?? 0) > 0 ? (
+            <View style={styles.socialItem}>
+              <Ionicons name="heart" size={14} color={Colors.burntOrange} />
+              <Text style={styles.socialText}>{ruck.likeCount}</Text>
+            </View>
+          ) : null}
+          {(ruck.commentCount ?? 0) > 0 ? (
+            <View style={styles.socialItem}>
+              <Ionicons name="chatbubble" size={13} color={Colors.textMuted} />
+              <Text style={styles.socialText}>{ruck.commentCount}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
@@ -309,5 +332,21 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    gap: 16,
+  },
+  socialItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  socialText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: Colors.textMuted,
   },
 });

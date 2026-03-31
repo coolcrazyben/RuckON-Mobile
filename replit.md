@@ -92,10 +92,10 @@ server/
   routes.ts            # Auth, community, ruck endpoints, onboarding
   db.ts                # Drizzle/pg database connection
   oauth.ts             # Google/Apple token verification (tokeninfo API + JWKS signature check)
-  storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory)
+  storage.ts           # DatabaseStorage (PostgreSQL-backed via Drizzle ORM, sessions in-memory, social features)
   moderation.ts        # Content moderation (word-boundary profanity filter with leetspeak detection)
 shared/
-  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships) + Zod validators
+  schema.ts            # Drizzle schema (users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, ruckLikes, ruckComments, friendships) + Zod validators
 ```
 
 ## Features
@@ -120,7 +120,8 @@ shared/
 - **Ruck Sharing:** After saving a ruck, users can share it to a community they belong to. Optional challenge tagging. Creates community post of type `ruck_share` with referenceId pointing to the ruck. POST `/api/rucks/:id/share` endpoint handles this.
 - **Challenge Detail:** Dedicated screen at `app/challenge/[id].tsx` with goal, participants, dates, join/leave button. GET `/api/challenges/:id` returns challenge with community info, participant count, isJoined.
 - **Tappable Challenges:** Pinned challenges, challenges tab items, and challenge announcements in community feed all navigate to challenge detail screen.
-- **Ruck Detail:** 6-stat grid, map placeholder, photos grid, like/comment section
+- **Ruck Detail:** Real API-powered detail screen at `app/ruck/[id].tsx`. GET `/api/rucks/:id` returns ruck with user info, like count, comment count, and whether requesting user has liked it. 6-stat grid (miles, duration, weight, pace, lbs moved, pack weight). GPS route displayed on RuckMap when available. Notes section. Like toggle with spring animation (POST `/api/rucks/:id/like`). Real comments with avatars/timestamps (GET/POST `/api/rucks/:id/comments`). Comment input with send button.
+- **Social System:** `ruck_likes` table with unique (ruckId, userId) constraint. `ruck_comments` table (id, ruckId, userId, content, createdAt). Feed cards show real like/comment counts. Tapping a ruck card in the feed navigates to the detail screen.
 
 ## Key Dependencies
 
