@@ -192,6 +192,31 @@ export default function LogRuckScreen() {
     setGpsElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
   }, []);
 
+  const discardRuck = useCallback(() => {
+    Alert.alert(
+      'Discard Ruck',
+      'Are you sure you want to discard this ruck? All tracking data will be lost.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            if (watchRef.current) {
+              watchRef.current.remove();
+              watchRef.current = null;
+            }
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
+            resetForm();
+          },
+        },
+      ]
+    );
+  }, []);
+
   useEffect(() => {
     return () => {
       if (watchRef.current) watchRef.current.remove();
@@ -412,10 +437,16 @@ export default function LogRuckScreen() {
               <Text style={styles.fsStatLabel}>pace</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.fsStopBtn} onPress={stopTracking}>
-            <View style={styles.fsStopIcon} />
-            <Text style={styles.fsStopText}>STOP</Text>
-          </TouchableOpacity>
+          <View style={styles.fsButtonRow}>
+            <TouchableOpacity style={styles.fsDiscardBtn} onPress={discardRuck}>
+              <Ionicons name="trash-outline" size={20} color={Colors.bone} />
+              <Text style={styles.fsDiscardText}>DISCARD</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.fsStopBtn} onPress={stopTracking}>
+              <View style={styles.fsStopIcon} />
+              <Text style={styles.fsStopText}>STOP</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -643,6 +674,13 @@ export default function LogRuckScreen() {
             <Text style={styles.saveBtnText}>Save Ruck</Text>
           )}
         </TouchableOpacity>
+
+        {!saved && !saving && (mode === 'manual' ? (distance || weight || notes || hours || minutes || seconds) : gpsFinished) && (
+          <TouchableOpacity style={styles.discardBtn} onPress={discardRuck}>
+            <Ionicons name="trash-outline" size={18} color="#FF6B6B" />
+            <Text style={styles.discardBtnText}>Discard Ruck</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       <Modal
@@ -1028,6 +1066,46 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.bone,
     letterSpacing: 3,
+  },
+  fsButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  fsDiscardBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.darkCard,
+    borderRadius: 16,
+    paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: Colors.cardBorder,
+  },
+  fsDiscardText: {
+    fontFamily: 'Oswald_700Bold',
+    fontSize: 16,
+    color: Colors.bone,
+    letterSpacing: 2,
+  },
+  discardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+    backgroundColor: 'rgba(255, 107, 107, 0.08)',
+  },
+  discardBtnText: {
+    fontFamily: 'Oswald_600SemiBold',
+    fontSize: 15,
+    color: '#FF6B6B',
+    letterSpacing: 1.5,
   },
   modalOverlay: {
     flex: 1,
