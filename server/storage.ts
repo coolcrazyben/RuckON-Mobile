@@ -4,6 +4,38 @@ import { db } from "./db";
 import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
+interface RuckFeedItem {
+  type: 'ruck';
+  id: string;
+  userId: string;
+  userName: string | null;
+  userAvatar: string | null;
+  createdAt: Date | null;
+  distance: number | null;
+  durationSeconds: number | null;
+  weight: number | null;
+  notes: string | null;
+}
+
+interface PostFeedItem {
+  type: 'post';
+  id: string;
+  userId: string;
+  userName: string | null;
+  userAvatar: string | null;
+  createdAt: Date | null;
+  postType: string;
+  content: string | null;
+  referenceId: string | null;
+}
+
+export type FeedItem = RuckFeedItem | PostFeedItem;
+
+export interface EnrichedChallenge extends Challenge {
+  participantCount: number;
+  isJoined: boolean;
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -594,21 +626,7 @@ export class DatabaseStorage implements IStorage {
     return post;
   }
 
-  async getCommunityFeedWithPosts(communityId: string): Promise<Array<{
-    type: 'ruck' | 'post';
-    id: string;
-    userId: string;
-    userName: string | null;
-    userAvatar: string | null;
-    createdAt: Date | null;
-    distance?: number | null;
-    durationSeconds?: number | null;
-    weight?: number | null;
-    notes?: string | null;
-    postType?: string;
-    content?: string | null;
-    referenceId?: string | null;
-  }>> {
+  async getCommunityFeedWithPosts(communityId: string): Promise<FeedItem[]> {
     const memberIds = await db
       .select({ userId: userCommunities.userId })
       .from(userCommunities)
@@ -653,9 +671,30 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(communityPosts.createdAt))
       .limit(50);
 
-    const combined: Array<any> = [
-      ...ruckResults.map(r => ({ type: 'ruck' as const, ...r })),
-      ...postResults.map(p => ({ type: 'post' as const, ...p })),
+    const combined: FeedItem[] = [
+      ...ruckResults.map(r => ({
+        type: 'ruck' as const,
+        id: r.id,
+        userId: r.userId,
+        userName: r.userName,
+        userAvatar: r.userAvatar,
+        createdAt: r.createdAt,
+        distance: r.distance,
+        durationSeconds: r.durationSeconds,
+        weight: r.weight,
+        notes: r.notes,
+      })),
+      ...postResults.map(p => ({
+        type: 'post' as const,
+        id: p.id,
+        userId: p.userId,
+        userName: p.userName,
+        userAvatar: p.userAvatar,
+        createdAt: p.createdAt,
+        postType: p.postType,
+        content: p.content,
+        referenceId: p.referenceId,
+      })),
     ];
 
     combined.sort((a, b) => {
@@ -670,8 +709,8 @@ export class DatabaseStorage implements IStorage {
   async getCommunityDetail(communityId: string, userId?: string): Promise<{
     community: (Community & { creatorName: string | null }) | null;
     joined: boolean;
-    feed: Array<any>;
-    challenges: Array<any>;
+    feed: FeedItem[];
+    challenges: EnrichedChallenge[];
   }> {
     const community = await this.getCommunity(communityId);
     if (!community) return { community: null, joined: false, feed: [], challenges: [] };
