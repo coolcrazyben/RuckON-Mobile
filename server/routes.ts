@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
-import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, createChallengeSchema, type User } from "@shared/schema";
+import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, createChallengeSchema, updateCommunitySchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 import { moderateText } from "./moderation";
@@ -442,6 +442,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/communities/:id/detail", async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      let userId: string | undefined;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const authToken = authHeader.slice(7);
+        const authUser = await storage.getSessionUser(authToken);
+        if (authUser) userId = authUser.id;
+      }
+      const detail = await storage.getCommunityDetail(req.params.id, userId);
+      if (!detail.community) {
+        return res.status(404).json({ message: "Community not found" });
+      }
+      return res.json(detail);
+    } catch (error) {
+      console.error("Community detail error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   app.get("/api/communities/:id", async (req: Request<{ id: string }>, res: Response) => {
     try {
       const community = await storage.getCommunity(req.params.id);
@@ -456,6 +476,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({ ...community, creatorName });
     } catch (error) {
       console.error("Get community error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.put("/api/communities/:id", authMiddleware, async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const result = updateCommunitySchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ message: result.error.issues[0].message });
+      }
+
+      const authUser = (req as unknown as AuthenticatedRequest).authUser;
+      const community = await storage.getCommunity(req.params.id);
+      if (!community) {
+        return res.status(404).json({ message: "Community not found" });
+      }
+      if (community.createdBy !== authUser.id) {
+        return res.status(403).json({ message: "Only the community creator can edit the community" });
+      }
+
+      if (result.data.name) {
+        const nameCheck = moderateText(result.data.name);
+        if (!nameCheck.ok) {
+          return res.status(400).json({ message: nameCheck.message });
+        }
+      }
+      if (result.data.description) {
+        const descCheck = moderateText(result.data.description);
+        if (!descCheck.ok) {
+          return res.status(400).json({ message: descCheck.message });
+        }
+      }
+
+      const updated = await storage.updateCommunity(req.params.id, result.data);
+      return res.json(updated);
+    } catch (error) {
+      console.error("Update community error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -536,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: descCheck.message });
       }
 
-      const challenge = await storage.createChallenge({
+      const challenge = await storage.createChallengeWithAnnouncement({
         communityId: req.params.id,
         title: result.data.title,
         description: result.data.description,

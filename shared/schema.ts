@@ -84,6 +84,18 @@ export const challengeParticipants = pgTable("challenge_participants", {
   joinedAt: timestamp("joined_at").defaultNow(),
 });
 
+export const communityPosts = pgTable("community_posts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull(),
+  postType: text("post_type").notNull(),
+  referenceId: varchar("reference_id"),
+  userId: varchar("user_id").notNull(),
+  content: text("content"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertRuckSchema = z.object({
   distance: z.number().positive(),
   durationSeconds: z.number().int().nonnegative().optional(),
@@ -145,9 +157,18 @@ export const createChallengeSchema = z.object({
   endDate: z.string().min(1, "End date is required"),
 });
 
+export const updateCommunitySchema = z.object({
+  name: z.string().min(3, "Name must be at least 3 characters").max(50, "Name must be under 50 characters").optional(),
+  description: z.string().min(10, "Description must be at least 10 characters").max(500, "Description must be under 500 characters").optional(),
+  category: z.enum(["General", "Events", "Local", "Training", "Military", "Challenges", "Gear", "Social"]).optional(),
+  location: z.string().min(1, "Location is required").max(100).optional(),
+  banner: z.string().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
 export type UserCommunity = typeof userCommunities.$inferSelect;
 export type Challenge = typeof challenges.$inferSelect;
 export type ChallengeParticipant = typeof challengeParticipants.$inferSelect;
+export type CommunityPost = typeof communityPosts.$inferSelect;

@@ -1,5 +1,5 @@
-import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant } from "@shared/schema";
-import { users, communities, userCommunities, rucks, challenges, challengeParticipants } from "@shared/schema";
+import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost } from "@shared/schema";
+import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -496,6 +496,31 @@ export class DatabaseStorage implements IStorage {
     return challenge;
   }
 
+  async createChallengeWithAnnouncement(data: { communityId: string; title: string; description: string; challengeType: string; goalValue: number; goalUnit: string; endDate: string; createdBy: string }): Promise<Challenge> {
+    return await db.transaction(async (tx) => {
+      const [challenge] = await tx.insert(challenges).values({
+        communityId: data.communityId,
+        title: data.title,
+        description: data.description,
+        challengeType: data.challengeType,
+        goalValue: data.goalValue,
+        goalUnit: data.goalUnit,
+        endDate: new Date(data.endDate),
+        createdBy: data.createdBy,
+      }).returning();
+
+      await tx.insert(communityPosts).values({
+        communityId: data.communityId,
+        postType: 'challenge_announcement',
+        referenceId: challenge.id,
+        userId: data.createdBy,
+        content: `New challenge: "${challenge.title}" — ${challenge.goalValue} ${challenge.goalUnit}. Join now!`,
+      });
+
+      return challenge;
+    });
+  }
+
   async getCommunityChall(communityId: string): Promise<Challenge[]> {
     return db.select().from(challenges)
       .where(eq(challenges.communityId, communityId))
@@ -544,6 +569,148 @@ export class DatabaseStorage implements IStorage {
   async getChallenge(id: string): Promise<Challenge | undefined> {
     const [challenge] = await db.select().from(challenges).where(eq(challenges.id, id));
     return challenge;
+  }
+
+  async updateCommunity(id: string, data: Partial<Community>): Promise<Community | undefined> {
+    const updateData: Record<string, unknown> = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.location !== undefined) updateData.location = data.location;
+    if (data.banner !== undefined) updateData.banner = data.banner;
+    if (Object.keys(updateData).length === 0) return this.getCommunity(id);
+    const [updated] = await db.update(communities).set(updateData).where(eq(communities.id, id)).returning();
+    return updated;
+  }
+
+  async createCommunityPost(data: { communityId: string; postType: string; referenceId?: string; userId: string; content?: string }): Promise<CommunityPost> {
+    const [post] = await db.insert(communityPosts).values({
+      communityId: data.communityId,
+      postType: data.postType,
+      referenceId: data.referenceId || null,
+      userId: data.userId,
+      content: data.content || null,
+    }).returning();
+    return post;
+  }
+
+  async getCommunityFeedWithPosts(communityId: string): Promise<Array<{
+    type: 'ruck' | 'post';
+    id: string;
+    userId: string;
+    userName: string | null;
+    userAvatar: string | null;
+    createdAt: Date | null;
+    distance?: number | null;
+    durationSeconds?: number | null;
+    weight?: number | null;
+    notes?: string | null;
+    postType?: string;
+    content?: string | null;
+    referenceId?: string | null;
+  }>> {
+    const memberIds = await db
+      .select({ userId: userCommunities.userId })
+      .from(userCommunities)
+      .where(eq(userCommunities.communityId, communityId));
+
+    if (memberIds.length === 0) return [];
+
+    const ids = memberIds.map(m => m.userId);
+
+    const ruckResults = await db
+      .select({
+        id: rucks.id,
+        userId: rucks.userId,
+        distance: rucks.distance,
+        durationSeconds: rucks.durationSeconds,
+        weight: rucks.weight,
+        notes: rucks.notes,
+        createdAt: rucks.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(rucks)
+      .leftJoin(users, eq(rucks.userId, users.id))
+      .where(inArray(rucks.userId, ids))
+      .orderBy(desc(rucks.createdAt))
+      .limit(50);
+
+    const postResults = await db
+      .select({
+        id: communityPosts.id,
+        userId: communityPosts.userId,
+        postType: communityPosts.postType,
+        content: communityPosts.content,
+        referenceId: communityPosts.referenceId,
+        createdAt: communityPosts.createdAt,
+        userName: users.name,
+        userAvatar: users.avatar,
+      })
+      .from(communityPosts)
+      .leftJoin(users, eq(communityPosts.userId, users.id))
+      .where(eq(communityPosts.communityId, communityId))
+      .orderBy(desc(communityPosts.createdAt))
+      .limit(50);
+
+    const combined: Array<any> = [
+      ...ruckResults.map(r => ({ type: 'ruck' as const, ...r })),
+      ...postResults.map(p => ({ type: 'post' as const, ...p })),
+    ];
+
+    combined.sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    return combined.slice(0, 50);
+  }
+
+  async getCommunityDetail(communityId: string, userId?: string): Promise<{
+    community: (Community & { creatorName: string | null }) | null;
+    joined: boolean;
+    feed: Array<any>;
+    challenges: Array<any>;
+  }> {
+    const community = await this.getCommunity(communityId);
+    if (!community) return { community: null, joined: false, feed: [], challenges: [] };
+
+    let creatorName: string | null = null;
+    if (community.createdBy) {
+      const creator = await this.getUser(community.createdBy);
+      creatorName = creator?.name || creator?.username || null;
+    }
+
+    let joined = false;
+    if (userId) {
+      const membership = await db.select().from(userCommunities).where(
+        and(eq(userCommunities.userId, userId), eq(userCommunities.communityId, communityId))
+      );
+      joined = membership.length > 0;
+    }
+
+    const [feed, challengeList] = await Promise.all([
+      this.getCommunityFeedWithPosts(communityId),
+      this.getCommunityChall(communityId),
+    ]);
+
+    let userJoinedChallengeIds = new Set<string>();
+    if (userId && challengeList.length > 0) {
+      userJoinedChallengeIds = await this.getUserChallengeIds(userId, challengeList.map(ch => ch.id));
+    }
+
+    const enrichedChallenges = await Promise.all(challengeList.map(async (ch) => {
+      const participantCount = await this.getChallengeParticipantCount(ch.id);
+      return { ...ch, participantCount, isJoined: userJoinedChallengeIds.has(ch.id) };
+    }));
+
+    return {
+      community: { ...community, creatorName },
+      joined,
+      feed,
+      challenges: enrichedChallenges,
+    };
   }
 }
 
