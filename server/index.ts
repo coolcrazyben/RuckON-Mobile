@@ -14,13 +14,11 @@ declare module "http" {
 }
 
 function validateRequiredEnv() {
-  const missing: string[] = [];
-  if (!process.env.GOOGLE_CLIENT_ID) missing.push("GOOGLE_CLIENT_ID");
-  if (!process.env.APPLE_SERVICE_ID && !process.env.APPLE_BUNDLE_ID) {
-    missing.push("APPLE_SERVICE_ID or APPLE_BUNDLE_ID");
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    console.warn("WARNING: GOOGLE_CLIENT_ID not set — Google sign-in will be unavailable");
   }
-  if (missing.length > 0) {
-    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  if (!process.env.APPLE_SERVICE_ID && !process.env.APPLE_BUNDLE_ID) {
+    console.warn("WARNING: APPLE_SERVICE_ID/APPLE_BUNDLE_ID not set — Apple sign-in will be unavailable");
   }
 }
 
