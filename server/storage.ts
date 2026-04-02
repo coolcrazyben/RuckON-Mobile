@@ -1,7 +1,7 @@
 import type { User, InsertUser, Community, UserCommunity, Ruck, Challenge, ChallengeParticipant, CommunityPost, Friendship, RuckLike, RuckComment, Notification } from "@shared/schema";
-import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships, ruckLikes, ruckComments, notifications } from "@shared/schema";
+import { users, communities, userCommunities, rucks, challenges, challengeParticipants, communityPosts, friendships, ruckLikes, ruckComments, notifications, sessions } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, sql, desc, and, inArray } from "drizzle-orm";
+import { eq, ilike, or, sql, desc, and, inArray, gt, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 interface RuckFeedItem {
@@ -47,6 +47,7 @@ export interface IStorage {
   getSessionUser(token: string): Promise<User | undefined>;
   createSession(userId: string): Promise<string>;
   deleteSession(token: string): Promise<void>;
+  deleteExpiredSessions(): Promise<void>;
   getCommunities(): Promise<Community[]>;
   searchCommunities(query: string): Promise<Community[]>;
   getCommunitiesByLocation(location: string): Promise<Community[]>;
@@ -77,8 +78,6 @@ export interface IStorage {
   markNotificationsRead(userId: string): Promise<void>;
   getUserAchievements(userId: string): Promise<Array<{ id: string; title: string; icon: string; earned: boolean; description: string }>>;
 }
-
-const sessions = new Map<string, string>();
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
@@ -145,19 +144,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSessionUser(token: string): Promise<User | undefined> {
-    const userId = sessions.get(token);
-    if (!userId) return undefined;
-    return this.getUser(userId);
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.token, token), gt(sessions.expiresAt, new Date())));
+    if (!session) return undefined;
+    return this.getUser(session.userId);
   }
 
   async createSession(userId: string): Promise<string> {
     const token = randomUUID();
-    sessions.set(token, userId);
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days per D-10
+    await db.insert(sessions).values({ token, userId, expiresAt });
     return token;
   }
 
   async deleteSession(token: string): Promise<void> {
-    sessions.delete(token);
+    await db.delete(sessions).where(eq(sessions.token, token));
+  }
+
+  async deleteExpiredSessions(): Promise<void> {
+    await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
   }
 
   async getCommunities(): Promise<Community[]> {
