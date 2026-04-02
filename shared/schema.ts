@@ -22,6 +22,13 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const sessions = pgTable("sessions", {
+  token: varchar("token").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
 export const communities = pgTable("communities", {
   id: varchar("id")
     .primaryKey()
@@ -32,7 +39,7 @@ export const communities = pgTable("communities", {
   banner: text("banner"),
   category: text("category"),
   location: text("location"),
-  createdBy: varchar("created_by"),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -40,8 +47,8 @@ export const userCommunities = pgTable("user_communities", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  communityId: varchar("community_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: "cascade" }),
   joinedAt: timestamp("joined_at").defaultNow(),
 });
 
@@ -49,15 +56,15 @@ export const rucks = pgTable("rucks", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   distance: integer("distance"),
   durationSeconds: integer("duration_seconds"),
   weight: integer("weight"),
   notes: text("notes"),
   routeCoordinates: text("route_coordinates"),
   routeImageUrl: text("route_image_url"),
-  communityId: varchar("community_id"),
-  challengeId: varchar("challenge_id"),
+  communityId: varchar("community_id").references(() => communities.id, { onDelete: "set null" }),
+  challengeId: varchar("challenge_id").references(() => challenges.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -65,7 +72,7 @@ export const challenges = pgTable("challenges", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull(),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   challengeType: text("challenge_type").notNull(),
@@ -73,7 +80,7 @@ export const challenges = pgTable("challenges", {
   goalUnit: text("goal_unit").notNull(),
   startDate: timestamp("start_date").defaultNow(),
   endDate: timestamp("end_date").notNull(),
-  createdBy: varchar("created_by").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -81,8 +88,8 @@ export const challengeParticipants = pgTable("challenge_participants", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  challengeId: varchar("challenge_id").notNull(),
-  userId: varchar("user_id").notNull(),
+  challengeId: varchar("challenge_id").notNull().references(() => challenges.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   joinedAt: timestamp("joined_at").defaultNow(),
 });
 
@@ -90,10 +97,10 @@ export const communityPosts = pgTable("community_posts", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull(),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: "cascade" }),
   postType: text("post_type").notNull(),
   referenceId: varchar("reference_id"),
-  userId: varchar("user_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -102,8 +109,8 @@ export const ruckLikes = pgTable("ruck_likes", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  ruckId: varchar("ruck_id").notNull(),
-  userId: varchar("user_id").notNull(),
+  ruckId: varchar("ruck_id").notNull().references(() => rucks.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   uniqueIndex("ruck_likes_ruck_user_idx").on(table.ruckId, table.userId),
@@ -113,8 +120,8 @@ export const ruckComments = pgTable("ruck_comments", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  ruckId: varchar("ruck_id").notNull(),
-  userId: varchar("user_id").notNull(),
+  ruckId: varchar("ruck_id").notNull().references(() => rucks.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -123,10 +130,10 @@ export const notifications = pgTable("notifications", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   referenceId: varchar("reference_id"),
-  fromUserId: varchar("from_user_id"),
+  fromUserId: varchar("from_user_id").references(() => users.id, { onDelete: "set null" }),
   message: text("message").notNull(),
   read: boolean("read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -136,14 +143,15 @@ export const friendships = pgTable("friendships", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  requesterId: varchar("requester_id").notNull(),
-  addresseeId: varchar("addressee_id").notNull(),
+  requesterId: varchar("requester_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  addresseeId: varchar("addressee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export type Friendship = typeof friendships.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
 
 export const insertRuckSchema = z.object({
   distance: z.number().positive(),
@@ -166,7 +174,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(8),
   name: z.string().min(1),
 });
 
