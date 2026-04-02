@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
+import { formatDuration, formatPace, timeAgo } from '@/lib/format';
 
 interface Achievement {
   id: string;
@@ -48,36 +49,6 @@ interface CommunityData {
   name: string;
   memberCount: number | null;
   banner: string | null;
-}
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function formatPace(distanceCents: number, durationSeconds: number): string {
-  const miles = distanceCents / 100;
-  if (miles <= 0 || durationSeconds <= 0) return '--';
-  const paceMinutes = durationSeconds / 60 / miles;
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
-  return `${mins}:${String(secs).padStart(2, '0')}`;
-}
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  const diffWeeks = Math.floor(diffDays / 7);
-  return `${diffWeeks}w ago`;
 }
 
 function AchievementBadge({ achievement }: { achievement: Achievement }) {

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
+import { formatDuration, timeAgo as formatTimeAgo } from '@/lib/format';
 
 interface CommunityDetail {
   id: string;
@@ -79,23 +80,6 @@ interface ChallengeData {
 }
 
 type CommunityTab = 'feed' | 'members' | 'leaderboard' | 'challenges';
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function formatTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return `${Math.floor(days / 7)}w ago`;
-}
 
 function MiniRuckCard({ item, onChallengePress }: { item: FeedItem; onChallengePress?: (referenceId: string) => void }) {
   if (item.type === 'post') {

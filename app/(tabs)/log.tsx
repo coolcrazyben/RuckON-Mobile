@@ -20,6 +20,7 @@ import {
 import Colors from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 import { getApiUrl } from '@/lib/query-client';
+import { formatPace } from '@/lib/format';
 
 import * as Location from 'expo-location';
 import RuckMap, { type RuckMapHandle } from '@/components/RuckMap';
@@ -62,14 +63,6 @@ function formatElapsed(seconds: number): string {
   const s = seconds % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function formatPace(miles: number, seconds: number): string {
-  if (miles <= 0 || seconds <= 0) return '--:--';
-  const paceMin = seconds / 60 / miles;
-  const mins = Math.floor(paceMin);
-  const secs = Math.round((paceMin - mins) * 60);
-  return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
 export default function LogRuckScreen() {
@@ -397,7 +390,7 @@ export default function LogRuckScreen() {
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
-  const gpsPace = formatPace(gpsMiles, gpsElapsed);
+  const gpsPace = formatPace(gpsMiles * 100, gpsElapsed);
 
   if (gpsActive && mode === 'gps') {
     return (
