@@ -13,41 +13,41 @@ declare module "http" {
   }
 }
 
+function validateRequiredEnv() {
+  const missing: string[] = [];
+  if (!process.env.GOOGLE_CLIENT_ID) missing.push("GOOGLE_CLIENT_ID");
+  if (!process.env.APPLE_SERVICE_ID && !process.env.APPLE_BUNDLE_ID) {
+    missing.push("APPLE_SERVICE_ID or APPLE_BUNDLE_ID");
+  }
+  if (missing.length > 0) {
+    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+  }
+}
+
 function setupCors(app: express.Application) {
   app.use((req, res, next) => {
     const origins = new Set<string>();
 
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
+    if (process.env.ALLOWED_ORIGINS) {
+      process.env.ALLOWED_ORIGINS.split(",").forEach((o: string) => {
+        origins.add(o.trim());
       });
     }
 
     const origin = req.header("origin");
-
-    // Allow localhost origins for Expo web development (any port)
     const isLocalhost =
-      origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
+      process.env.NODE_ENV !== "production" &&
+      (origin?.startsWith("http://localhost:") ||
+        origin?.startsWith("http://127.0.0.1:"));
 
     if (origin && (origins.has(origin) || isLocalhost)) {
       res.header("Access-Control-Allow-Origin", origin);
-      res.header(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-      );
+      res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-
+    if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
   });
 }
@@ -227,6 +227,7 @@ function setupErrorHandler(app: express.Application) {
 }
 
 (async () => {
+  validateRequiredEnv();
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
@@ -251,4 +252,8 @@ function setupErrorHandler(app: express.Application) {
       log(`express server serving on port ${port}`);
     },
   );
+
+  setInterval(() => {
+    storage.deleteExpiredSessions().catch(console.error);
+  }, 60 * 60 * 1000); // Every hour
 })();
