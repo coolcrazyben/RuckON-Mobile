@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-04-02T19:14:31.464Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-04-02T19:14:44.067Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 1
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 01-infrastructure-migration]: validateRequiredEnv() runs before any middleware; server refuses to start without GOOGLE_CLIENT_ID and at least one Apple credential
 - [Phase 01-infrastructure-migration]: CORS uses ALLOWED_ORIGINS comma-separated env var; localhost only allowed when NODE_ENV !== 'production'
 - [Phase 01-infrastructure-migration]: uploadImage strips data URI prefix and detects content-type; supabase 'images' bucket with avatars/ and route-images/ subfolders
+- [Phase 01-infrastructure-migration]: authLimiter uses draft-8 RateLimit headers, 10 req/15 min per IP; applied to all 4 auth endpoints
 
 ### Pending Todos
 
@@ -80,6 +81,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T19:14:21.575Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-04-02T19:14:44.063Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
