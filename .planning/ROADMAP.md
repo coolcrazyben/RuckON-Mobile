@@ -10,11 +10,11 @@
 
 **Goal:** Replace Replit in-memory/Postgres setup with Supabase, fix all critical security vulnerabilities, deploy Express API on Railway, and address the highest-severity issues from the codebase audit.
 
-**Plans:** 6 plans
+**Plans:** 2/6 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md -- Schema hardening: FK constraints, sessions table, migration tooling, new dependencies
-- [ ] 01-02-PLAN.md -- Utility consolidation: extract format functions, delete dead code
+- [x] 01-01-PLAN.md -- Schema hardening: FK constraints, sessions table, migration tooling, new dependencies
+- [x] 01-02-PLAN.md -- Utility consolidation: extract format functions, delete dead code
 - [ ] 01-03-PLAN.md -- Session persistence, OAuth hardening, CORS overhaul
 - [ ] 01-04-PLAN.md -- Rate limiting on auth endpoints, image storage migration to Supabase Storage
 - [ ] 01-05-PLAN.md -- Seed data script, server startup cleanup, health endpoint
