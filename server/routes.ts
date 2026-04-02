@@ -1,10 +1,12 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { registerSchema, loginSchema, onboardingSchema, insertRuckSchema, updateProfileSchema, createCommunitySchema, createChallengeSchema, updateCommunitySchema, type User } from "@shared/schema";
 import { storage } from "./storage";
 import { verifyGoogleIdToken, verifyAppleIdentityToken } from "./oauth";
 import { moderateText } from "./moderation";
+import { uploadImage } from "./supabase";
 
 interface AuthenticatedRequest extends Request {
   authUser: User;
@@ -31,8 +33,16 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 10,                 // 10 requests per window per IP
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many attempts, please try again later." },
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
       const result = registerSchema.safeParse(req.body);
       if (!result.success) {
@@ -68,7 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", authLimiter, async (req: Request, res: Response) => {
     try {
       const result = loginSchema.safeParse(req.body);
       if (!result.success) {
@@ -99,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/google", async (req: Request, res: Response) => {
+  app.post("/api/auth/google", authLimiter, async (req: Request, res: Response) => {
     try {
       const { idToken } = req.body;
       if (!idToken) {
@@ -146,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/apple", async (req: Request, res: Response) => {
+  app.post("/api/auth/apple", authLimiter, async (req: Request, res: Response) => {
     try {
       const { identityToken, fullName } = req.body;
       if (!identityToken) {
