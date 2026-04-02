@@ -551,7 +551,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: result.error.issues[0].message });
       }
       const user = (req as AuthenticatedRequest).authUser;
-      const ruck = await storage.createRuck(user.id, result.data);
+
+      // Upload route image to Supabase Storage if provided as base64
+      let routeImageUrl = result.data.routeImageUrl;
+      if (routeImageUrl && routeImageUrl.startsWith("data:image")) {
+        const fileName = `${user.id}-${Date.now()}.jpg`;
+        routeImageUrl = await uploadImage(routeImageUrl, "route-images", fileName);
+      }
+
+      const ruck = await storage.createRuck(user.id, { ...result.data, routeImageUrl });
       return res.status(201).json(ruck);
     } catch (error) {
       console.error("Create ruck error:", error);
@@ -608,11 +616,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/user/avatar", authMiddleware, async (req: Request, res: Response) => {
     try {
       const user = (req as AuthenticatedRequest).authUser;
-      const { avatar } = req.body;
-      if (!avatar || typeof avatar !== "string") {
-        return res.status(400).json({ message: "Avatar data required" });
+      const avatarBase64 = req.body.avatar;
+      if (!avatarBase64 || typeof avatarBase64 !== "string") {
+        return res.status(400).json({ message: "Avatar image required" });
       }
-      const updated = await storage.updateUser(user.id, { avatar });
+
+      const fileName = `${user.id}-${Date.now()}.jpg`;
+      const publicUrl = await uploadImage(avatarBase64, "avatars", fileName);
+
+      const updated = await storage.updateUser(user.id, { avatar: publicUrl });
       if (!updated) {
         return res.status(404).json({ message: "User not found" });
       }
