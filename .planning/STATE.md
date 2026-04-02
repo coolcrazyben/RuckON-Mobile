@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-04-02T19:14:44.067Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-04-02T19:25:32.351Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/ROADMAP.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 01 (infrastructure-migration) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 12 | 2 tasks | 3 files |
 | Phase 01-infrastructure-migration P03 | 20 | 2 tasks | 3 files |
 | Phase 01-infrastructure-migration P04 | 15 | 2 tasks | 4 files |
+| Phase 01-infrastructure-migration P05 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 01-infrastructure-migration]: CORS uses ALLOWED_ORIGINS comma-separated env var; localhost only allowed when NODE_ENV !== 'production'
 - [Phase 01-infrastructure-migration]: uploadImage strips data URI prefix and detects content-type; supabase 'images' bucket with avatars/ and route-images/ subfolders
 - [Phase 01-infrastructure-migration]: authLimiter uses draft-8 RateLimit headers, 10 req/15 min per IP; applied to all 4 auth endpoints
+- [Phase 01-infrastructure-migration]: Hardcoded UUID seed IDs (seed-user-001, seed-comm-001, etc.) for deterministic FK relationships in seed data
+- [Phase 01-infrastructure-migration]: Health endpoint GET /health returns {status: ok, timestamp: Date.now()} for Railway liveness monitoring
 
 ### Pending Todos
 
@@ -81,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T19:14:44.063Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-04-02T19:25:32.348Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
