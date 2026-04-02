@@ -14,10 +14,10 @@ declare module "http" {
 }
 
 function validateRequiredEnv() {
-  if (!process.env.GOOGLE_CLIENT_ID) {
+  if (!process.env["GOOGLE_CLIENT_ID"]) {
     console.warn("WARNING: GOOGLE_CLIENT_ID not set — Google sign-in will be unavailable");
   }
-  if (!process.env.APPLE_SERVICE_ID && !process.env.APPLE_BUNDLE_ID) {
+  if (!process.env["APPLE_SERVICE_ID"] && !process.env["APPLE_BUNDLE_ID"]) {
     console.warn("WARNING: APPLE_SERVICE_ID/APPLE_BUNDLE_ID not set — Apple sign-in will be unavailable");
   }
 }
@@ -26,15 +26,15 @@ function setupCors(app: express.Application) {
   app.use((req, res, next) => {
     const origins = new Set<string>();
 
-    if (process.env.ALLOWED_ORIGINS) {
-      process.env.ALLOWED_ORIGINS.split(",").forEach((o: string) => {
+    if (process.env["ALLOWED_ORIGINS"]) {
+      process.env["ALLOWED_ORIGINS"].split(",").forEach((o: string) => {
         origins.add(o.trim());
       });
     }
 
     const origin = req.header("origin");
     const isLocalhost =
-      process.env.NODE_ENV !== "production" &&
+      process.env["NODE_ENV"] !== "production" &&
       (origin?.startsWith("http://localhost:") ||
         origin?.startsWith("http://127.0.0.1:"));
 
@@ -242,7 +242,7 @@ function setupErrorHandler(app: express.Application) {
 
   setupErrorHandler(app);
 
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = parseInt(process.env["PORT"] || "5000", 10);
   server.listen(
     {
       port,
