@@ -234,8 +234,11 @@ function setupErrorHandler(app: express.Application) {
 
   configureExpoAndLanding(app);
 
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: Date.now() });
+  });
+
   const { storage } = await import("./storage");
-  await storage.seedCommunities();
 
   const server = await registerRoutes(app);
 
